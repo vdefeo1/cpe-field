@@ -1007,7 +1007,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.b0c0e9-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.32f70d-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -3129,7 +3129,9 @@ function dayRows(d, wo, crew){
    REVENUE DASHBOARD
    Visible to GF / office / superintendent. Hidden from crews.
    ============================================================ */
-function canSeeMoney(){ return role() !== 'foreman' || !!S.settings.crewSeesMoney; }
+/* Crews and the scheduler work in units and percentages, not dollars. */
+const NO_MONEY = ['foreman','scheduler'];
+function canSeeMoney(){ return !NO_MONEY.includes(role()) || !!S.settings.crewSeesMoney; }
 /** money, or a blank where the crew must not see it */
 function cash(n){ return canSeeMoney() ? money(n) : '—'; }
 function cash0(n){ return canSeeMoney() ? money0(n) : '—'; }
@@ -3443,23 +3445,27 @@ function crewDay(date, crew){
   const c = crewDayCost(date, crew);
   const target = c.cost * (1 + targetMargin());
   const rev = crewRevenue(date, crew);
+  const raw = target ? rev/target*100 : 0;
   return { cost:c.cost, gf:c.gf||0, estimated:c.estimated, standard:c.standard, target,
-           rev, pct: target ? Math.min(100, rev/target*100) : 0, over: rev - target };
+           rev, pct:Math.min(100, raw), raw, over: rev - target };
 }
-/** the fill bar. Office sees the revenue target, not the cost behind it. */
+/** The fill bar. Only the PM sees the cost behind it; the scheduler sees percentages alone. */
 function crewBar(d){
   const full = d.rev >= d.target && d.target > 0;
-  const pct = Math.round(d.pct);
+  const pct = Math.round(d.pct), raw = Math.round(d.raw);
+  const left = canSeeMoney()
+    ? (full ? `Covered — ${money0(d.rev)} booked${d.over>1?`, ${money0(d.over)} past the mark`:''}`
+            : `${money0(d.rev)} of ${money0(d.target)} · ${pct}%`)
+    : (full ? `Covered — ${raw}% of today's target`
+            : raw ? `${raw}% of today's target` : 'Nothing booked yet today');
   return `<div class="meter ${full?'full':''}"><i style="width:${pct}%"></i></div>
     <div class="row" style="margin-top:5px">
-      <span class="hint ${full?'':''}" style="${full?'color:#6ee7b7;font-weight:700':''}">${
-        full ? `Covered — ${money0(d.rev)} booked${d.over>1?`, ${money0(d.over)} past the mark`:''}`
-             : `${money0(d.rev)} of ${money0(d.target)} · ${pct}%`}</span>
+      <span class="hint" style="${full?'color:#6ee7b7;font-weight:700':''}">${left}</span>
       <span class="col hint" style="text-align:right">${
         canSeeMargin()
           ? `day costs ${money0(d.cost)}${d.gf?` incl. ${money0(d.gf)} GF`:''}${
               d.standard?' (standard day)':d.estimated?' (est)':''} + ${Math.round(targetMargin()*100)}%`
-          : `covers the day + ${Math.round(targetMargin()*100)}%`}</span>
+          : `full bar = the day + ${Math.round(targetMargin()*100)}%`}</span>
     </div>`;
 }
 
@@ -4832,13 +4838,13 @@ function renderSet(){
   </div></div>
 
   <div class="card"><h3>Revenue visibility</h3><div class="body">
-    <p class="hint">Each role gets its own home screen and its own actions in the pipeline: the office releases work
-      and assigns crews, the specialist clears suspense items, the foreman builds and submits, the GF audits, the office
-      invoices. Crews see no dollars at all — no rates, no line totals, no job value, and their asbuilt and daily DFR
-      print without the rate and amount columns. The GF sees revenue but not your cost or margin. Project Manager sees
-      everything. Switch the role selector in the top bar to check each one.</p>
+    <p class="hint">Each role gets its own home screen and its own actions: the specialist clears suspense items, the
+      scheduler puts crews on cleared work, the foreman builds and submits, the GF audits, billing invoices.
+      <b>Crews and the scheduler see no dollars at all</b> — no rates, no line totals, no job value; the scheduler's
+      coverage bars show percentages only, and crew asbuilts and daily DFRs print without the rate and amount columns.
+      The GF and billing see revenue but not your cost or margin. Project Manager sees everything. Switch the role selector in the top bar to check each one.</p>
     <div class="row" style="margin-top:10px">
-      <span class="col" style="font-size:13.5px">Show revenue to crews</span>
+      <span class="col" style="font-size:13.5px">Show revenue to crews and the scheduler</span>
       <button class="btn sm ${S.settings.crewSeesMoney?'ok':''}" onclick="S.settings.crewSeesMoney=!S.settings.crewSeesMoney;save();applyRole();renderSet();renderAll()">
         ${S.settings.crewSeesMoney?'On':'Off'}</button>
     </div>
