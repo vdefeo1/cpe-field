@@ -719,6 +719,17 @@ main{flex:1 1 auto;position:relative;overflow:hidden}
 .view.nopad{padding:0}
 .pad{padding:12px 12px calc(20px + var(--safe-b))}
 
+.bell{
+  position:relative;width:36px;height:36px;display:grid;place-items:center;flex:0 0 auto;
+  border:1px solid var(--line);border-radius:10px;background:var(--bg3);
+}
+.bell svg{width:18px;height:18px;stroke:var(--dim);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.bell .badge{position:absolute;top:-4px;right:-4px}
+@media (max-width:430px){
+  header .pill{display:none}                       /* the bell and the role picker win the space */
+  .brand small{max-width:120px}
+}
+
 /* ---------- bottom nav ---------- */
 nav{
   flex:0 0 auto;background:var(--bg2);border-top:1px solid var(--line);
@@ -996,7 +1007,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.2b6414-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.b0c0e9-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1021,13 +1032,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <header>
   <div class="brand">CPE FIELD<small id="hdrsub">Tampa Electric</small></div>
   <div class="grow"></div>
+  <button class="bell" id="bell" onclick="inboxSheet()" aria-label="Notifications">
+    <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+    <span id="bellbadge"></span>
+  </button>
   <span class="pill" id="syncpill"><i class="dot"></i><span id="synctxt">online</span></span>
   <select class="role" id="role" aria-label="Role">
     <option value="pm">Project Manager</option>
     <option value="specialist">Specialist</option>
-    <option value="gf">General Foreman</option>
+    <option value="scheduler">Scheduler</option>
     <option value="foreman">Foreman</option>
-    <option value="office">Office / Billing</option>
+    <option value="gf">General Foreman</option>
+    <option value="billing">Billing</option>
   </select>
 </header>
 
@@ -1131,12 +1147,12 @@ const CATBY = {}; CAT.forEach(u => { if (!CATBY[u.code]) CATBY[u.code] = u; });
 const ST = {
   new:                { n:1, lbl:'Not ridden out',          short:'Not ridden', col:'#64748b', ink:'#cbd5e1', step:1, who:'specialist' },
   pending_suspense:   { n:2, lbl:'Pending suspense items',  short:'Suspense',   col:'#eab308', ink:'#fde68a', step:2, who:'specialist' },
-  ready_construction: { n:3, lbl:'Ready for construction',  short:'Ready',      col:'#06b6d4', ink:'#a5f3fc', step:3, who:'office' },
+  ready_construction: { n:3, lbl:'Ready for construction',  short:'Ready',      col:'#06b6d4', ink:'#a5f3fc', step:3, who:'scheduler' },
   assigned:           { n:4, lbl:'Assigned to crew',        short:'Assigned',   col:'#7c3aed', ink:'#ddd6fe', step:4, who:'foreman' },
   in_progress:        { n:5, lbl:'In progress',             short:'Building',   col:'#f97316', ink:'#fed7aa', step:5, who:'foreman' },
   ready_audit:        { n:6, lbl:'Ready for audit',         short:'Audit',      col:'#d946ef', ink:'#f5d0fe', step:6, who:'gf' },
   correction:         { n:7, lbl:'Immediate correction',    short:'Correction', col:'#dc2626', ink:'#fecaca', step:6, who:'foreman' },
-  ready_invoice:      { n:8, lbl:'Ready for invoice',       short:'Invoice',    col:'#16a34a', ink:'#bbf7d0', step:7, who:'office' },
+  ready_invoice:      { n:8, lbl:'Ready for invoice',       short:'Invoice',    col:'#16a34a', ink:'#bbf7d0', step:7, who:'billing' },
   complete:           { n:9, lbl:'Complete — invoiced',     short:'Complete',   col:'#0f766e', ink:'#99f6e4', step:8, who:'—' }
 };
 const ORDER = ['new','pending_suspense','ready_construction','assigned',
@@ -1153,6 +1169,9 @@ function isLockedStatus(st){ return ST[st].step >= STEP_LOCKED; }
 const LEGACY = { not_started:'new', ready_precon:'new', in_progress:'in_progress',
                  foreman_complete:'ready_audit', qa_rejected:'correction',
                  qa_approved:'ready_invoice', billed:'complete' };
+function migrateRole(){
+  if (S.settings.role === 'office') S.settings.role = 'billing';
+}
 function migrateStatus(){
   Object.keys(S.pts).forEach(id => {
     const r = S.pts[id];
@@ -1332,7 +1351,7 @@ const DEF = {
     geo:{ refN:30875, refE:32814, lat:27.7185, lng:-82.2905, ftPerUnit:10, swapXY:false, rot:0 },
     gmKey:'', esriKey:'', foreman:'', crew:'412', notify:false, crewSeesMoney:false, role:'pm'
   },
-  pts:{}, days:{}, pending:0, log:[],
+  pts:{}, days:{}, pending:0, log:[], inbox:[],
   // schedule overrides — what the office has corrected against the printed rate sheet
   rates:{ labor:{}, equip:{}, unit:{} },
   crews:['412','418','425','431'],
@@ -1528,6 +1547,47 @@ function hist(id, what){
   if (S.log.length > 400) S.log.shift();
 }
 
+/* ============================================================
+   NOTIFICATIONS — routed to whoever the work just landed on
+   ============================================================ */
+const ROLE_LBL = { scheduler:'the scheduler', specialist:'the construction specialist',
+                   foreman:'the crew foreman', gf:'the General Foreman',
+                   billing:'billing', pm:'the project manager' };
+const ROLE_SHORT = { scheduler:'Scheduler', specialist:'Specialist', foreman:'Foreman',
+                     gf:'General Foreman', billing:'Billing', pm:'Project Manager' };
+function inbox(){ return S.inbox = S.inbox || []; }
+/** who this message is for: a role, and for a foreman a specific crew */
+function notifyRole(to, crew, title, body, ptId){
+  const n = { id:'n'+Date.now()+Math.round(Math.random()*1000), ts:new Date().toISOString(),
+              to, crew:crew || null, title, body, ptId:ptId || null, read:false };
+  inbox().push(n);
+  if (inbox().length > 200) inbox().shift();
+  save();
+  if (forMe(n)){
+    notify(title, body);                          // this device is the recipient
+    n.read = false;
+  } else {
+    toast('Sent to ' + (ROLE_SHORT[to] || to) + (crew ? ' — crew ' + crew : '') + ': ' + title);
+  }
+  renderBell();
+  return n;
+}
+function forMe(n){
+  const r = role();
+  if (r === 'pm') return true;                     // the PM sees the whole chain
+  if (n.to !== r) return false;
+  if (n.to === 'foreman' && n.crew) return n.crew === S.settings.crew;
+  return true;
+}
+function myInbox(){ return inbox().filter(forMe).slice().reverse(); }
+function unread(){ return myInbox().filter(n => !n.read).length; }
+function renderBell(){
+  const el = document.getElementById('bellbadge'); if (!el) return;
+  const n = unread();
+  el.textContent = n || ''; el.className = n ? 'badge' : '';
+}
+function markInboxRead(){ myInbox().forEach(n => n.read = true); save(); renderBell(); }
+
 /* ---------- toast ---------- */
 let toastT;
 function toast(msg, kind){
@@ -1571,6 +1631,7 @@ document.getElementById('role').onchange = () => {
 function applyRole(){
   const qa = document.querySelector('nav button[data-v="qa"]');
   qa.style.display = role() === 'foreman' ? 'none' : '';
+  renderBell();
 }
 
 /* ---------- sheet ---------- */
@@ -1860,7 +1921,7 @@ function banner(t, b){
    ============================================================ */
 function canEditUnits(id){
   const r = rec(id), st = ST[r.status].step, rl = role();
-  if (rl === 'office' || rl === 'specialist') return false;
+  if (rl === 'billing' || rl === 'scheduler' || rl === 'specialist') return false;
   if (st >= STEP_LOCKED) return rl === 'pm';
   if (rl === 'pm' || rl === 'gf') return true;
   return st >= STEP_BUILD;                       // foreman: only once it is assigned to a crew
@@ -1874,7 +1935,7 @@ function canEditSusp(id, field){
 }
 function canAddPhoto(id){
   const rl = role();
-  if (rl === 'office') return false;
+  if (rl === 'billing' || rl === 'scheduler') return false;
   return ST[rec(id).status].step < STEP_LOCKED || rl === 'pm';
 }
 
@@ -2019,12 +2080,12 @@ function actionBar(p, r){
     B.push(`<button class="btn ok big" onclick="auditPass('${id}')">Pass audit</button>`);
   }
   if (r.status === 'ready_construction'){
-    if (rl === 'office' || rl === 'pm' || rl === 'gf')
+    if (rl === 'scheduler' || rl === 'pm' || rl === 'gf')
       B.push(`<button class="btn pri big" onclick="assignSheet('${id}')">Assign a crew</button>`);
     if (rl === 'foreman')
       B.push(`<button class="btn pri big" onclick="claimPoint('${id}')">Take it — crew ${esc(S.settings.crew||'')}</button>`);
   }
-  if (r.status === 'ready_invoice' && (rl === 'office' || rl === 'pm'))
+  if (r.status === 'ready_invoice' && (rl === 'billing' || rl === 'pm'))
     B.push(`<button class="btn pri big" onclick="moveStatus('${id}','complete')">Mark invoiced</button>`);
   if (!B.length) return `<div class="bar-note">Stage ${st.n} · ${st.lbl} — sits with ${
     ROLE_LBL[st.who] || 'nobody'}</div>`;
@@ -2045,6 +2106,8 @@ function claimPoint(id){
   r.crew = crew; r.assignedAt = new Date().toISOString(); r.status = 'assigned';
   hist(id, 'Taken by crew ' + crew + ' (self-assigned)');
   save(); renderAll(); drawPins();
+  notifyRole('scheduler', null, 'Crew ' + crew + ' took a job',
+    fullLabel(pt(id)) + ' was picked up in the field, not scheduled', id);
   toast(fullLabel(pt(id)) + ' → crew ' + crew, 'ok');
 }
 /** office assigns a whole section at once — one pole at a time is not a workflow */
@@ -2074,7 +2137,9 @@ function bulkAssign(ids){
     hist(id, 'Assigned to crew ' + crew + ' (bulk)');
   });
   save(); closeSheet(); renderAll(); drawPins();
-  notify('Work assigned', ids.length + ' points → crew ' + crew);
+  if (ids.length)
+    notifyRole('foreman', crew, ids.length + ' new job' + (ids.length===1?'':'s') + ' scheduled to crew ' + crew,
+      ids.slice(0,4).map(i => label(pt(i))).join(', ') + (ids.length>4?` +${ids.length-4} more`:''), ids[0]);
   toast(ids.length + ' point' + (ids.length===1?'':'s') + ' assigned to crew ' + crew, 'ok');
 }
 function assignSheet(id){
@@ -2142,7 +2207,10 @@ function setSusp(id, k, f, v){
   hist(id, SUSP.find(s => s.k === k).lbl + ' — ' + f + ': ' + (v === null ? 'cleared' : v === true ? 'yes' : v === false ? 'no' : v));
   const moved = evalPrecon(id);
   save(); renderPoint(id); drawPins();
-  if (moved) toast(fullLabel(pt(id)) + ' → ' + ST[rec(id).status].lbl, 'ok');
+  if (moved){
+    toast(fullLabel(pt(id)) + ' → ' + ST[rec(id).status].lbl, 'ok');
+    if (rec(id).status === 'ready_construction') handOff(id, 'ready_construction');
+  }
   // the response date is worth nothing without the response itself
   const spec = SUSP.find(s => s.k === k);
   if (spec && spec.photo && f === spec.required[spec.required.length-1] && String(v||'').trim()
@@ -2287,6 +2355,23 @@ function postNote(id){
   renderPoint(id); toast('Note added','ok');
 }
 function goBack(){ go(BACKTO || 'list'); }
+function inboxSheet(){
+  const list = myInbox();
+  openSheet('Notifications' + (list.length ? ' · ' + list.length : ''),
+    (role() === 'pm' ? `<p class="hint">You see the whole chain. Everyone else only gets the messages addressed to
+      them — a foreman only hears about his own crew.</p><div style="height:8px"></div>` : '') +
+    (list.length ? list.slice(0,40).map(n => `<button class="itm" onclick="closeSheet();${
+        n.ptId ? `go('point','${n.ptId}')` : ''}">
+      <b style="width:8px;height:8px;border-radius:50%;background:${n.read?'transparent':'var(--accent)'};flex:0 0 auto;margin-top:6px"></b>
+      <div class="col"><div class="t" style="font-size:13.5px">${esc(n.title)}</div>
+        <div class="s">${esc(n.body)}</div>
+        <div class="s" style="color:var(--dim2)">${new Date(n.ts).toLocaleString()} · to ${
+          ROLE_SHORT[n.to]||n.to}${n.crew?' crew '+n.crew:''}</div></div></button>`).join('')
+      : '<div class="empty">Nothing yet</div>') +
+    (list.length ? `<div style="height:10px"></div>
+      <button class="btn wide" onclick="markInboxRead();inboxSheet()">Mark all read</button>` : ''));
+  setTimeout(markInboxRead, 1200);
+}
 function setCrew(id,v){
   const r = rec(id); r.crew = v || null;
   hist(id, v ? 'Assigned to crew '+v : 'Crew assignment cleared'); save(); renderPoint(id);
@@ -2429,7 +2514,7 @@ function statusCard(p,r){
     A.push(`<p class="hint">Ridden out and clear${r.preconAt ? ', signed off ' + new Date(r.preconAt).toLocaleDateString() : ''}.
       Waiting on the office to assign a crew.</p>`);
 
-  if (r.status === 'ready_construction' && (rl === 'office' || rl === 'pm' || rl === 'gf')){
+  if (r.status === 'ready_construction' && (rl === 'scheduler' || rl === 'pm' || rl === 'gf')){
     A.push(`<label class="f">Assign to crew</label>
       <div class="row" style="margin-bottom:8px">
         <select id="asg" class="col" style="min-height:42px">${S.crews.map(c =>
@@ -2457,7 +2542,7 @@ function statusCard(p,r){
         susp(id).switching.needed === true ? ' Switching order #: '+(esc(susp(id).switching.number)||'<b style="color:var(--warn)">missing</b>')+'.' : ''}</p>`);
   }
 
-  if (r.status === 'ready_invoice' && (rl === 'office' || rl === 'pm'))
+  if (r.status === 'ready_invoice' && (rl === 'billing' || rl === 'pm'))
     act('pri','Mark invoiced','moveStatus(\''+id+'\',\'complete\')','Closes the point out.');
 
   if (!A.length)
@@ -2475,8 +2560,6 @@ function statusCard(p,r){
     <span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.lbl}</span></h3>
     <div class="body">${A.join('')}${qa}${lk}</div></div>`;
 }
-const ROLE_LBL = { office:'the office', specialist:'the construction specialist', foreman:'the crew foreman',
-                   gf:'the General Foreman', pm:'the project manager' };
 
 function moveStatus(id, to, note){
   const r = rec(id), from = ST[r.status].lbl;
@@ -2485,7 +2568,27 @@ function moveStatus(id, to, note){
   if (to === 'complete') r.billedAt = new Date().toISOString();
   hist(id, from + ' → ' + ST[to].lbl + (note ? ' — ' + note : ''));
   save(); renderAll(); drawPins();
+  handOff(id, to, note);
   toast(fullLabel(pt(id)) + ' → ' + ST[to].lbl, 'ok');
+}
+/** the chain of custody — one message to whoever now owns it */
+function handOff(id, to, note){
+  const p = pt(id), r = rec(id), where = fullLabel(p);
+  if (to === 'ready_construction')
+    notifyRole('scheduler', null, 'Ready to schedule', where + ' is cleared and needs a crew', id);
+  else if (to === 'assigned')
+    notifyRole('foreman', r.crew, 'New job scheduled to crew ' + (r.crew||''),
+      where + ' — ' + ptTotals(p).planned + ' planned units', id);
+  else if (to === 'ready_audit')
+    notifyRole('gf', null, 'Ready for audit', where + ' submitted by crew ' + (r.crew||'—'), id);
+  else if (to === 'correction')
+    notifyRole('foreman', r.crew, 'Immediate correction required',
+      where + (note ? ' — ' + note : ''), id);
+  else if (to === 'ready_invoice')
+    notifyRole('billing', null, 'Passed audit — ready to invoice',
+      where + (canSeeMoney() ? ' · ' + money0(ptTotals(p).total) : ''), id);
+  else if (to === 'complete')
+    notifyRole('pm', null, 'Invoiced', where + ' is closed out', id);
 }
 function assignCrew(id){
   const sel = document.getElementById('asg'); const crew = sel ? sel.value : S.crews[0];
@@ -2493,7 +2596,7 @@ function assignCrew(id){
   r.status = 'assigned';
   hist(id, 'Assigned to crew ' + crew);
   save(); renderAll(); drawPins();
-  notify('New work assigned', fullLabel(pt(id)) + ' → crew ' + crew);
+  handOff(id, 'assigned');
 }
 /** specialist signs off the ride-out. Hard-blocked on the before photos. */
 function completePrecon(id){
@@ -2517,7 +2620,9 @@ function completePrecon(id){
   if (typeof routeAutoTick === 'function') routeAutoTick(id);
   save(); renderAll(); drawPins();
   toast(fullLabel(pt(id)) + ' → ' + ST[target].lbl, 'ok');
-  if (target === 'ready_construction') notify('Ready for construction', fullLabel(pt(id)) + ' — clear to assign');
+  if (target === 'ready_construction') handOff(id, 'ready_construction');
+  else notifyRole('scheduler', null, 'Pre-con done, still waiting',
+    fullLabel(pt(id)) + ' — ' + suspOpen(id).map(o => o.item.lbl).join(', ') + ' on order', id);
 }
 
 /** scroll the point view to the card that fixes a blocker */
@@ -2537,6 +2642,8 @@ function overrideAudit(id){
   r.status = 'ready_audit'; r.submitted = r.submittedAt = new Date().toISOString(); r.carry = false;
   hist(id, 'Override to audit by ' + role() + ' — ' + why + ' — outstanding: ' + block.join('; '));
   save(); closeSheet(); renderAll(); drawPins();
+  notifyRole('gf', null, 'Sent to audit with ' + block.length + ' exception' + (block.length===1?'':'s'),
+    fullLabel(pt(id)) + ' — ' + why, id);
   toast('Sent to audit with ' + block.length + ' exception' + (block.length===1?'':'s'), 'ok');
 }
 
@@ -2582,7 +2689,7 @@ function submitAudit(id){
   r.carry = false;
   hist(id, 'Complete — submitted for audit');
   save(); renderAll(); drawPins();
-  notify('Audit requested', fullLabel(pt(id)) + ' is ready for review');
+  handOff(id, 'ready_audit');
   toast(fullLabel(pt(id)) + ' → Ready for audit', 'ok');
 }
 function auditPass(id){
@@ -2591,7 +2698,6 @@ function auditPass(id){
   r.qa = { result:'passed', by:'General Foreman', ts:new Date().toISOString(), note };
   r.approvedAt = r.qa.ts;
   moveStatus(id, 'ready_invoice', note || 'audit passed');
-  notify('Audit passed', fullLabel(pt(id)) + ' released for invoicing');
 }
 function auditFail(id){
   const note = prompt('What has to be corrected? This goes to the foreman.') ?? '';
@@ -2599,7 +2705,6 @@ function auditFail(id){
   const r = rec(id);
   r.qa = { result:'immediate correction required', by:'General Foreman', ts:new Date().toISOString(), note };
   moveStatus(id, 'correction', note);
-  notify('Correction required', fullLabel(pt(id)) + ' — ' + note);
 }
 
 /* ============================================================
@@ -3422,7 +3527,8 @@ function renderHome(){
   const r = role();
   document.getElementById('homebody').innerHTML =
     r === 'foreman' ? foremanHome() : r === 'gf' ? gfHome() :
-    r === 'office' ? officeHome() : r === 'specialist' ? specialistHome() : pmHome();
+    r === 'scheduler' ? schedulerHome() : r === 'billing' ? billingHome() :
+    r === 'specialist' ? specialistHome() : pmHome();
 }
 
 function ptItem(p, sub, right){
@@ -3524,7 +3630,7 @@ function foremanHome(){
     { k:'build',  lbl:'Building',   n:build.length || null },
     { k:'short',  lbl:'Photos short', n:short.length || null },
     { k:'audit',  lbl:'With the GF', n:audit.length || null }
-  ].filter(s => s.k === 'all' || s.n);
+  ].filter(s => s.k === 'all' || s.n).concat([{ k:'route', lbl:'Route' }]);
   const cur = homeView('foreman','all');
   const pick = { all:mine, corr, assign, build, short, audit }[cur] || mine;
   const order = { correction:0, in_progress:1, assigned:2, ready_audit:3 };
@@ -3552,11 +3658,12 @@ function foremanHome(){
   </div></div>
 
   ${homeChips('foreman', sets, cur)}
-  ${homeList(list, cur === 'all' ? 'Nothing assigned to crew ' + esc(my||'—') + ' yet' : 'Nothing in this list',
-    { wo:false, crew:false })}
+  ${cur === 'route'
+    ? routeCard('mine')
+    : homeList(list, cur === 'all' ? 'Nothing assigned to crew ' + esc(my||'—') + ' yet' : 'Nothing in this list',
+        { wo:false, crew:false })}
   <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
-    <button class="btn" onclick="setHomeView('foreman','route')">Route</button></div>
-  ${cur === 'route' ? routeCard('mine') : ''}
+    <button class="btn" onclick="go('dfr')">Time entry</button></div>
   <div style="height:14px"></div>`;
 }
 
@@ -3577,7 +3684,7 @@ function gfHome(){
     { k:'all',   lbl:'All scheduled', n:sched.length },
     { k:'corr',  lbl:'Correction', n:corr.length || null, col:corr.length?ST.correction.col:null },
     { k:'short', lbl:'Photos short', n:short.length || null }
-  ].filter(s => s.k === 'all' || s.n).concat(crewSets);
+  ].filter(s => s.k === 'all' || s.n).concat(crewSets).concat([{ k:'route', lbl:'Route' }]);
   const cur = homeView('gf', audit.length ? 'audit' : 'all');
   let list = cur === 'audit' ? audit : cur === 'corr' ? corr : cur === 'short' ? short
     : cur.indexOf('crew:') === 0 ? sched.filter(p => rec(p.id).crew === cur.slice(5)) : sched;
@@ -3603,56 +3710,90 @@ function gfHome(){
   </div></div>
 
   ${homeChips('gf', sets, cur)}
-  ${homeList(list, 'Nothing in this list', {})}
+  ${cur === 'route' ? routeCard('audit') : homeList(list, 'Nothing in this list', {})}
   <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
     <button class="btn" onclick="go('qa')">QA/QC</button></div>
   <div style="height:14px"></div>`;
 }
 
-/* ---------------- OFFICE / BILLING ---------------- */
-function officeHome(){
+/* ---------------- SCHEDULER ---------------- */
+function schedulerHome(){
   const td = today();
   const toSched = PTS.filter(p => rec(p.id).status === 'ready_construction');
-  const toBill  = PTS.filter(p => rec(p.id).status === 'ready_invoice');
-  const billVal = toBill.reduce((s,p) => s + ptTotals(p).total, 0);
+  const waiting = PTS.filter(p => rec(p.id).status === 'pending_suspense');
+  const out = PTS.filter(p => { const st = ST[rec(p.id).status].step; return st >= STEP_BUILD && st < STEP_AUDIT; });
   const sets = [
     { k:'sched', lbl:'To schedule', n:toSched.length, col:toSched.length?ST.ready_construction.col:null },
-    { k:'bill',  lbl:'To invoice',  n:toBill.length,  col:toBill.length?ST.ready_invoice.col:null },
     { k:'crews', lbl:'Crews' },
-    { k:'asb',   lbl:'Asbuilts' }
+    { k:'out',   lbl:'Out with crews', n:out.length || null },
+    { k:'wait',  lbl:'Still in pre-con', n:waiting.length || null }
   ];
-  const cur = homeView('office', toSched.length ? 'sched' : 'bill');
+  const cur = homeView('scheduler', 'sched');
   const body =
     cur === 'sched' ? `
       ${toSched.length ? `<div class="card"><div class="body">
-        <p class="hint">Cleared by the specialist and sitting idle — no crew can open these until you put one on them.</p>
-        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign — by section or all of it</button>
+        <p class="hint">Cleared by the specialist and sitting idle. Nobody can open these until you put a crew on them.</p>
+        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Schedule — by section or all of it</button>
       </div></div>` : ''}
-      ${homeList(toSched, 'Nothing is cleared and waiting', { crew:false, needs:false })}`
-    : cur === 'bill' ? `
-      <div class="card"><div class="body">
-        <div style="font-size:26px;font-weight:800;line-height:1.15">${money0(billVal)}</div>
-        <div class="hint">passed audit and not invoiced · ${toBill.length} point${toBill.length===1?'':'s'}</div>
-        <p class="hint" style="margin-top:8px">Open a point to mark it invoiced, or print the package from Asbuilts.</p>
-      </div></div>
-      ${homeList(toBill, 'Nothing waiting to invoice', { needs:false })}`
-    : cur === 'crews' ? `<h3 class="sect">Today's schedule by crew</h3>
-      ${S.crews.map(c => crewCard(c, td)).join('')}`
-    : asbuiltCard();
+      ${homeList(toSched, 'Nothing cleared and waiting', { crew:false, needs:false })}`
+    : cur === 'crews' ? `<h3 class="sect">Today's crews</h3>${S.crews.map(c => crewCard(c, td)).join('')}`
+    : cur === 'out' ? homeList(out, 'Nothing out with a crew', {})
+    : homeList(waiting, 'Nothing waiting on suspense items', { crew:false });
   return `
   <div class="card"><div class="body">
-    <div class="hint">${greet()} · Office / Billing · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
+    <div class="hint">${greet()} · Scheduler · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
+    <div style="font-size:26px;font-weight:800;line-height:1.15;margin-top:3px;color:${
+      toSched.length?ST.ready_construction.ink:'var(--txt)'}">${toSched.length}</div>
+    <div class="hint">ready to schedule${out.length?` · ${out.length} out with crews`:''}${
+      waiting.length?` · ${waiting.length} still in pre-con`:''}</div>
+  </div></div>
+
+  ${homeChips('scheduler', sets, cur)}
+  ${body}
+  <div style="height:14px"></div>`;
+}
+
+/* ---------------- BILLING ---------------- */
+function billingHome(){
+  const ag = aging('all');
+  const toBill = PTS.filter(p => rec(p.id).status === 'ready_invoice');
+  const billed = PTS.filter(p => rec(p.id).status === 'complete');
+  const billVal = toBill.reduce((s,p) => s + ptTotals(p).total, 0);
+  const sets = [
+    { k:'bill', lbl:'To invoice', n:toBill.length, col:toBill.length?ST.ready_invoice.col:null },
+    { k:'asb',  lbl:'Asbuilts' },
+    { k:'done', lbl:'Invoiced', n:billed.length || null }
+  ];
+  const cur = homeView('billing', 'bill');
+  const body =
+    cur === 'bill' ? `
+      <div class="card"><div class="body">
+        <div style="font-size:28px;font-weight:800;line-height:1.15">${money0(billVal)}</div>
+        <div class="hint">passed audit and not invoiced · ${toBill.length} point${toBill.length===1?'':'s'}</div>
+        <div class="row" style="margin-top:10px;gap:14px">
+          <span class="hint"><b style="color:var(--txt)">${ag.avgQAHours?ag.avgQAHours.toFixed(0)+'h':'—'}</b> field to audit</span>
+          <span class="hint"><b style="color:var(--txt)">${ag.avgBillDays?ag.avgBillDays.toFixed(1)+'d':'—'}</b> audit to invoice</span>
+        </div>
+        <p class="hint" style="margin-top:8px">Open a point to mark it invoiced. Rates on these are locked at what the
+          audit approved — nothing can move them now.</p>
+      </div></div>
+      ${homeList(toBill, 'Nothing waiting to invoice', { needs:false })}`
+    : cur === 'asb' ? asbuiltCard()
+    : homeList(billed.slice(0,40), 'Nothing invoiced yet', { needs:false });
+  return `
+  <div class="card"><div class="body">
+    <div class="hint">${greet()} · Billing · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
     <div class="row" style="margin-top:4px;gap:16px">
-      <div><div style="font-size:22px;font-weight:800;line-height:1.1;color:${ST.ready_construction.ink}">${toSched.length}</div>
-        <div class="hint">to schedule</div></div>
       <div><div style="font-size:22px;font-weight:800;line-height:1.1;color:${ST.ready_invoice.ink}">${toBill.length}</div>
         <div class="hint">to invoice</div></div>
+      <div><div style="font-size:22px;font-weight:800;line-height:1.1">${billed.length}</div>
+        <div class="hint">invoiced</div></div>
       <div class="col" style="text-align:right"><div style="font-size:16px;font-weight:700">${money0(billVal)}</div>
         <div class="hint">ready to bill</div></div>
     </div>
   </div></div>
 
-  ${homeChips('office', sets, cur)}
+  ${homeChips('billing', sets, cur)}
   ${body}
   <div style="height:14px"></div>`;
 }
@@ -3922,9 +4063,7 @@ function pointNeeds(id){
   if (st < ST.ready_construction.step) return preconBlockers(id);
   if (st === ST.ready_construction.step) return ['no crew assigned'];
   if (st >= STEP_BUILD && st < STEP_AUDIT) return auditBlockers(id);
-  if (rec(id).status === 'ready_audit') return ['with the GF'];
-  if (rec(id).status === 'ready_invoice') return ['to invoice'];
-  return [];
+  return [];                        // at audit or past it, nothing is blocking — it just sits with someone
 }
 function allPointsCard(){
   const q = APQ.toLowerCase().trim();
@@ -4250,14 +4389,14 @@ const MI = (a,b) => {                                  // straight-line miles
 const mi = n => n < 0.1 ? Math.round(n*5280) + ' ft' : n.toFixed(1) + ' mi';
 
 const ROUTE_KINDS = {
-  precon:   { lbl:'To ride out',        who:['specialist','pm','office','gf'],
+  precon:   { lbl:'To ride out',        who:['specialist','pm','scheduler','gf'],
               test:p => ['new','pending_suspense'].includes(rec(p.id).status) },
   mine:     { lbl:"My crew's work",     who:['foreman','gf','pm'],
               test:p => rec(p.id).crew === S.settings.crew &&
                         ST[rec(p.id).status].step >= STEP_BUILD && ST[rec(p.id).status].step < STEP_LOCKED },
   audit:    { lbl:'To audit',           who:['gf','pm'],
               test:p => rec(p.id).status === 'ready_audit' },
-  filter:   { lbl:'Whatever is filtered', who:['specialist','foreman','gf','pm','office'],
+  filter:   { lbl:'Whatever is filtered', who:['specialist','foreman','gf','pm','scheduler','billing'],
               test:p => matchFilter(p, S.settings.filter) }
 };
 
@@ -4620,7 +4759,7 @@ function renderSet(){
   const g = S.settings.geo, w = WOS[S.settings.wo];
   const surveyed = PTS.filter(p => rec(p.id).coord).length;
   document.getElementById('setbody').innerHTML = `
-  ${(role() === 'office' || role() === 'pm') ? jobControlCard() : ''}
+  ${(role() === 'scheduler' || role() === 'pm') ? jobControlCard() : ''}
 
   ${canSeeMargin() ? rateCard() : ''}
 
@@ -5105,6 +5244,7 @@ window.addEventListener('offline', renderSync);
 
 /* ---------- boot ---------- */
 function renderAll(){
+  renderBell();
   renderSync(); drawPins();
   const act = document.querySelector('.view.active');
   const v = act ? act.id.slice(2) : 'map';
@@ -5118,15 +5258,16 @@ function renderAll(){
 }
 window.addEventListener('load', () => {
   const sel = document.getElementById('role');
-  if (S.settings.role) sel.value = S.settings.role;
-  migrateStatus(); applyRateOverrides(); migrateLocks();
+  migrateRole();
+  if (S.settings.role && [...sel.options].some(o => o.value === S.settings.role)) sel.value = S.settings.role;
+  migrateRole(); migrateStatus(); applyRateOverrides(); migrateLocks();
   if (typeof DEMO_BUILD !== 'undefined' && DEMO_BUILD){
     const el = document.createElement('span');
     el.className = 'pill'; el.style.cssText = 'border-color:#f59e0b;color:#f59e0b';
     el.innerHTML = '<i class="dot"></i>demo rates';
     document.querySelector('header .grow').after(el);
   }
-  applyRole(); initMap(); renderAll();
+  applyRole(); renderBell(); initMap(); renderAll();
   if (!Store.persistent) setTimeout(() => toast('Storage is blocked in this viewer — export before closing','bad'), 1200);
 });
 window.addEventListener('beforeprint', () => { if (MAP) MAP.invalidateSize(); });
