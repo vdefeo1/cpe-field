@@ -894,6 +894,13 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .ph.add svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
 .ph.add span{font-size:9.5px;margin-top:3px}
 
+/* ---------- daily target meter ---------- */
+.meter{height:12px;border-radius:6px;background:var(--bg3);overflow:hidden;border:1px solid var(--line)}
+.meter i{display:block;height:100%;border-radius:6px 0 0 6px;background:linear-gradient(90deg,#166534,#22c55e);
+  transition:width .3s ease}
+.meter.full i{border-radius:6px;background:linear-gradient(90deg,#16a34a,#4ade80);box-shadow:0 0 10px rgba(34,197,94,.45)}
+h3.sect{margin:14px 2px 8px;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+
 /* ---------- sticky action bar ---------- */
 .actionbar{
   position:fixed;left:0;right:0;bottom:calc(var(--nav) + var(--safe-b));z-index:700;
@@ -983,7 +990,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.d27462-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.9a96cd-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1299,9 +1306,10 @@ const DEF = {
   pts:{}, days:{}, pending:0, log:[],
   // schedule overrides — what the office has corrected against the printed rate sheet
   rates:{ labor:{}, equip:{}, unit:{} },
-  crews:['412','418','425'],
+  crews:['412','418','425','431'],
   // internal cost side — Project Manager only. Percentages seed the per-line rates.
-  cost:{ laborPct:0.58, equipPct:0.62, labor:{}, equip:{}, blendedST:0 }
+  cost:{ laborPct:0.58, equipPct:0.62, labor:{}, equip:{}, blendedST:0, targetMargin:0.15,
+         gfOn:true, gfClass:'SUPER VISOR', gfHours:10 }
 };
 let S = load();
 function load(){
@@ -3089,26 +3097,49 @@ function costEquipRate(name){
   const e = EQP.find(x => x.name === name);
   return e ? e.rate * S.cost.equipPct : 0;
 }
-const TYPICAL = ['LINE FOREMAN','JOURNEY LINEMAN','JOURNEY LINEMAN','GROUNDMAN'];
+/* CPE's standard crew: foreman, two linemen, an equipment operator and an apprentice */
+const STD_CREW  = ['LINE FOREMAN','JOURNEY LINEMAN','JOURNEY LINEMAN','EQUIP OPERATOR','APPR LINEMAN'];
+const STD_EQUIP = ['Bucket Truck','Line Truck / Digger Derrick'];
+const STD_HOURS = 10;
+const TYPICAL = STD_CREW;
 function blendedLaborCost(){
   const av = TYPICAL.map(costLaborRate).filter(Boolean);
   if (av.length) return av.reduce((a,b)=>a+b,0)/av.length;
   return LAB.length ? LAB.reduce((s,l)=>s+l.st,0)/LAB.length*S.cost.laborPct : 0;
 }
-/** cost of one crew-day. Uses the roster when it exists, otherwise estimates from the header. */
+/* ---------- General Foreman, split across the crews he is running ---------- */
+function gfDayCost(){
+  if (!S.cost.gfOn) return 0;
+  return costLaborRate(S.cost.gfClass || 'SUPER VISOR') * (+S.cost.gfHours || STD_HOURS);
+}
+/** crews with a roster or booked work on a date — who the GF's day is divided between */
+function activeCrews(date){
+  const set = {};
+  S.crews.forEach(c => {
+    const D = S.days[dayKey(date, c)];
+    if (D && ((D.roster||[]).length || D.startedAt)) set[c] = 1;
+  });
+  PTS.forEach(p => { const r = rec(p.id); if (r.crew && r.dates.includes(date)) set[r.crew] = 1; });
+  const n = Object.keys(set).length;
+  return n || S.crews.length || 1;
+}
+function gfShare(date){ return gfDayCost() / activeCrews(date); }
+
+/** cost of one crew-day: the crew and machines that were on it, plus a slice of the GF */
 function dayCost(D){
+  const gf = gfShare(D.date || today());
   if (D.roster && D.roster.length){
     let c = 0;
     D.roster.forEach(x => {
       const r = x.kind === 'Equipment' ? costEquipRate(x.name) : costLaborRate(x.name);
       c += (Number(x.st)||0)*r + (Number(x.ot)||0)*r*1.5;
     });
-    return { cost:c, estimated:false };
+    return { cost:c + gf, crew:c, gf, estimated:false };
   }
   const n = Number(D.onCrew) || (D.roster||[]).filter(x => x.kind === 'Labor').length || 0;
   const hrs = hoursFrom(D);
-  if (n && hrs) return { cost:n*hrs*blendedLaborCost(), estimated:true };
-  return { cost:0, estimated:false, missing:true };
+  if (n && hrs){ const c = n*hrs*blendedLaborCost(); return { cost:c + gf, crew:c, gf, estimated:true }; }
+  return { cost:0, crew:0, gf:0, estimated:false, missing:true };
 }
 /** clocked hours when the crew used the time screen, otherwise the typed start/stop */
 function hoursFrom(D){
@@ -3156,6 +3187,55 @@ function marginOf(sc){
   const anyEst = Object.keys(cb.est).length;
   const noRoster = allDays().filter(D => dayCost(D).missing).length;
   return { rev, cost, margin:rev-cost, pct: rev ? (rev-cost)/rev*100 : 0, anyEst, noRoster, days:allDays().length };
+}
+
+/* ---------- the daily target: cover the crew-day plus a margin ---------- */
+/** the standard day: five men, a bucket and a digger derrick, ten hours, plus the GF slice */
+function stdCrewLabor(){ return STD_CREW.reduce((s,n) => s + costLaborRate(n)*STD_HOURS, 0); }
+function stdCrewEquip(){ return STD_EQUIP.reduce((s,n) => s + costEquipRate(n)*STD_HOURS, 0); }
+function stdCrewDayCost(date){ return stdCrewLabor() + stdCrewEquip() + gfShare(date || today()); }
+/** what that crew's day costs — clocked if they logged it, otherwise the standard day */
+function crewDayCost(date, crew){
+  const c = dayCost(dayRec(date, crew));
+  if (c.cost) return { cost:c.cost, gf:c.gf, estimated:c.estimated };
+  return { cost:stdCrewDayCost(date), gf:gfShare(date), estimated:true, standard:true };
+}
+function targetMargin(){ const m = +(S.cost.targetMargin); return isFinite(m) ? m : 0.15; }
+/** revenue booked on one date against points belonging to one crew */
+function crewRevenue(date, crew){
+  let v = 0;
+  PTS.forEach(p => {
+    const r = rec(p.id);
+    if ((r.crew || '') !== crew) return;
+    p.units.forEach(u => { const e = r.units[u.seq];
+      if (e && e.date === date && Number(e.qty)) v += Number(e.qty) * rateOf(u,e); });
+    r.adders.forEach(a => { if (a.date === date && Number(a.qty)) v += Number(a.qty) * adderRate(a); });
+    r.te.forEach(x => { if (x.date === date) v += teValue(x); });
+  });
+  return v;
+}
+function crewDay(date, crew){
+  const c = crewDayCost(date, crew);
+  const target = c.cost * (1 + targetMargin());
+  const rev = crewRevenue(date, crew);
+  return { cost:c.cost, gf:c.gf||0, estimated:c.estimated, standard:c.standard, target,
+           rev, pct: target ? Math.min(100, rev/target*100) : 0, over: rev - target };
+}
+/** the fill bar. Office sees the revenue target, not the cost behind it. */
+function crewBar(d){
+  const full = d.rev >= d.target && d.target > 0;
+  const pct = Math.round(d.pct);
+  return `<div class="meter ${full?'full':''}"><i style="width:${pct}%"></i></div>
+    <div class="row" style="margin-top:5px">
+      <span class="hint ${full?'':''}" style="${full?'color:#6ee7b7;font-weight:700':''}">${
+        full ? `Covered — ${money0(d.rev)} booked${d.over>1?`, ${money0(d.over)} past the mark`:''}`
+             : `${money0(d.rev)} of ${money0(d.target)} · ${pct}%`}</span>
+      <span class="col hint" style="text-align:right">${
+        canSeeMargin()
+          ? `day costs ${money0(d.cost)}${d.gf?` incl. ${money0(d.gf)} GF`:''}${
+              d.standard?' (standard day)':d.estimated?' (est)':''} + ${Math.round(targetMargin()*100)}%`
+          : `covers the day + ${Math.round(targetMargin()*100)}%`}</span>
+    </div>`;
 }
 
 /* ---------- crew attribution ---------- */
@@ -3434,16 +3514,19 @@ function gfHome(){
 
 /* ---------------- OFFICE / BILLING ---------------- */
 function officeHome(){
-  const ag = aging('all');
-  const billed = PTS.filter(p => rec(p.id).status === 'complete');
-  const withSpec = PTS.filter(p => ST[rec(p.id).status].step <= ST.pending_suspense.step);
+  const ag = aging('all'), td = today();
   const toAssign = PTS.filter(p => rec(p.id).status === 'ready_construction');
+  const withSpec = PTS.filter(p => ST[rec(p.id).status].step <= ST.pending_suspense.step);
+  const scheduled = PTS.filter(p => { const st = ST[rec(p.id).status].step;
+    return st >= STEP_BUILD && st < STEP_AUDIT; });
   return `
   <div class="card"><div class="body">
-    <div class="hint">${greet()} · Office / Billing</div>
-    <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${money0(ag.approvedNotBilled)}</div>
-    <div class="hint">approved and ready to invoice · ${ag.toBill.length} work point${ag.toBill.length===1?'':'s'}</div>
+    <div class="hint">${greet()} · Office / Billing · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
+    <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${scheduled.length}</div>
+    <div class="hint">work point${scheduled.length===1?'':'s'} out with crews today${
+      toAssign.length?` · ${toAssign.length} cleared and unassigned`:''}</div>
   </div></div>
+
   <div class="tiles">
     <div class="tile"><b>${ag.toBill.length}</b><span>to invoice</span></div>
     <div class="tile"><b style="color:${toAssign.length?ST.ready_construction.ink:'inherit'}">${toAssign.length}</b><span>to assign</span></div>
@@ -3453,30 +3536,156 @@ function officeHome(){
   <div style="height:10px"></div>
 
   ${toAssign.length ? `<div class="card" style="border-color:${ST.ready_construction.col}">
-      <h3><span class="grow">Ready for construction — nobody is on it</span>
+      <h3><span class="grow">Cleared and unassigned</span>
         <span class="st" style="background:${ST.ready_construction.col}22;color:${ST.ready_construction.ink}">${toAssign.length}</span></h3>
       <div class="body">
-        <p class="hint">The specialist has cleared these and no crew can touch them until you assign one. This is the
-          step that stalls a job.</p>
-        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign a crew — by section or all of it</button>
+        <p class="hint">No crew can touch these until you put one on them.</p>
+        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign — by section or all of it</button>
       </div>
-      <div class="body tight">${toAssign.slice(0,12).map(p => ptItem(p, `${ptTotals(p).planned} planned units · clear`,
+      <div class="body tight">${toAssign.slice(0,8).map(p => ptItem(p, `${ptTotals(p).planned} planned units · clear`,
         `<button class="btn sm pri" onclick="event.stopPropagation();assignSheet('${p.id}')">Assign</button>`)).join('')}
-        ${toAssign.length > 12 ? `<div class="itm"><div class="col"><div class="s">+ ${toAssign.length-12} more</div></div></div>` : ''}</div>
+        ${toAssign.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${toAssign.length-8} more</div></div></div>` : ''}</div>
     </div>` : ''}
 
-  ${withSpec.length ? card('With the specialist', withSpec.length,
-      withSpec.slice(0,10).map(p => ptItem(p, preconNeeds(p.id).slice(0,2).map(x => x.split(' — ')[0]).join(', ') || 'clear')).join('')
-      + (withSpec.length > 10 ? `<div class="itm"><div class="col"><div class="s">+ ${withSpec.length-10} more</div></div></div>` : ''),
-      'Nothing for you until they release. A new job starts here — Job control under Setup drops a whole job on the specialist.') : ''}
+  <h3 class="sect">Today's schedule by crew</h3>
+  ${S.crews.map(c => crewCard(c, td)).join('')}
+  ${(() => { const un = PTS.filter(p => { const r = rec(p.id), st = ST[r.status].step;
+      return st >= STEP_BUILD && st < STEP_AUDIT && !r.crew; });
+     return un.length ? card('In build with no crew on the record', un.length,
+       un.map(p => ptItem(p, 'Assign a crew so it lands on someone',
+         `<button class="btn sm pri" onclick="event.stopPropagation();assignSheet('${p.id}')">Assign</button>`)).join('')) : ''; })()}
+
+  ${asbuiltCard()}
+
   ${card('Approved — ready to invoice', money0(ag.approvedNotBilled),
-    ag.toBill.map(p => ptItem(p, `${ptTotals(p).done} units · approved ${rec(p.id).approvedAt?new Date(rec(p.id).approvedAt).toLocaleDateString():''}`,
+    ag.toBill.slice(0,15).map(p => ptItem(p, `${ptTotals(p).done} units · passed audit ${rec(p.id).approvedAt?new Date(rec(p.id).approvedAt).toLocaleDateString():''}`,
       `<span style="font-weight:700;color:var(--txt)">${money0(ptTotals(p).total)}</span>`)).join('')
     || '<div class="empty">Nothing waiting</div>',
-    'Open a point to mark it billed, or print the work order asbuilt package from the DFR tab.')}
-  <div class="btnrow"><button class="btn" onclick="go('dfr')">Daily DFR</button>
-    <button class="btn pri" onclick="exportRevenueCSV()">Export CSV</button></div>
+    'Open a point and hit Mark invoiced, or print the whole work order package from the asbuilts card above.')}
+
+  ${withSpec.length ? card('With the specialist', withSpec.length,
+      withSpec.slice(0,8).map(p => ptItem(p, preconNeeds(p.id).slice(0,2).map(x => x.split(' — ')[0]).join(', ') || 'clear')).join('')
+      + (withSpec.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${withSpec.length-8} more</div></div></div>` : ''),
+      'Nothing for you until they release.') : ''}
+
+  <div class="btnrow"><button class="btn" onclick="go('dfr')">Time entry</button>
+    <button class="btn pri" onclick="exportRevenueCSV()">Revenue CSV</button></div>
   <div style="height:14px"></div>`;
+}
+
+/** one crew, what they have on, and whether today pays for itself */
+function crewCard(crew, date){
+  const D = dayRec(date, crew), d = crewDay(date, crew);
+  const mine = PTS.filter(p => rec(p.id).crew === crew);
+  const active = mine.filter(p => { const st = ST[rec(p.id).status].step; return st >= STEP_BUILD && st < STEP_AUDIT; });
+  const audit = mine.filter(p => rec(p.id).status === 'ready_audit');
+  const todayPts = mine.filter(p => rec(p.id).dates.includes(date));
+  const running = D.startedAt && !D.endedAt;
+  return `<div class="card">
+    <h3><span class="grow">Crew ${esc(crew)}${D.foreman?` · ${esc(D.foreman)}`:''}</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">${
+        running ? fmtDur(dayMins(D)) + ' on the clock' : D.endedAt ? 'day closed' : 'not started'}</span></h3>
+    <div class="body">
+      ${crewBar(d)}
+      <div class="row" style="margin-top:10px;gap:14px">
+        <span class="hint"><b style="color:var(--txt)">${active.length}</b> assigned</span>
+        <span class="hint"><b style="color:var(--txt)">${todayPts.length}</b> touched today</span>
+        <span class="hint"><b style="color:var(--txt)">${audit.length}</b> at audit</span>
+        <span class="col"></span>
+        ${active.length ? `<button class="btn sm" onclick="moveAllSheet('${crew}')">Move work</button>` : ''}
+      </div>
+    </div>
+    <div class="body tight">${active.length ? active.map(p => {
+      const st = ST[rec(p.id).status];
+      return `<div class="itm">
+        <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
+        <div class="col" onclick="go('point','${p.id}')" style="cursor:pointer">
+          <div class="t" style="font-size:13px">${p.wo} · ${p.sec} Pt ${p.pt}</div>
+          <div class="s">${st.short} · ${ptTotals(p).done}/${ptTotals(p).planned} units${
+            canSeeMoney()&&ptTotals(p).total?' · '+money0(ptTotals(p).total):''}</div></div>
+        <div class="r"><button class="btn sm" onclick="moveCrewSheet('${p.id}')">Move</button></div></div>`;
+      }).join('') : '<div class="empty">Nothing assigned to this crew</div>'}</div>
+  </div>`;
+}
+
+/* ---------- rescheduling ---------- */
+function moveCrewSheet(id){
+  const r = rec(id);
+  openSheet('Move ' + fullLabel(pt(id)), `
+    <p class="hint">Currently crew ${esc(r.crew||'—')}. Pick who takes it — the booked work and photos stay with the
+      point, only the crew changes.</p><div style="height:10px"></div>
+    ${S.crews.filter(c => c !== r.crew).map(c => `<button class="btn wide" style="margin-bottom:8px"
+      onclick="moveCrew('${id}','${c}')">Crew ${c}</button>`).join('')}
+    <button class="btn wide bad" onclick="moveCrew('${id}','')">Take it off the schedule</button>
+    <p class="hint" style="margin-top:8px">Taking it off puts it back to Ready for construction for someone else to pick up.</p>`);
+}
+function moveCrew(id, crew){
+  const r = rec(id), from = r.crew || 'unassigned';
+  if (!crew){
+    r.crew = null; r.status = 'ready_construction';
+    hist(id, 'Pulled off crew ' + from + ' — back to Ready for construction');
+  } else {
+    r.crew = crew; r.assignedAt = new Date().toISOString();
+    if (r.status === 'ready_construction') r.status = 'assigned';
+    hist(id, 'Rescheduled from crew ' + from + ' to crew ' + crew);
+    notify('Work rescheduled', fullLabel(pt(id)) + ' → crew ' + crew);
+  }
+  save(); closeSheet(); renderAll(); drawPins();
+  toast(crew ? 'Moved to crew ' + crew : 'Back on the unassigned list', 'ok');
+}
+function moveAllSheet(from){
+  const active = PTS.filter(p => { const r = rec(p.id), st = ST[r.status].step;
+    return r.crew === from && st >= STEP_BUILD && st < STEP_AUDIT; });
+  openSheet(`Move crew ${from}'s ${active.length} point${active.length===1?'':'s'}`, `
+    <p class="hint">Hands everything this crew has not finished to someone else. Work already at audit or invoiced
+      is left alone.</p><div style="height:10px"></div>
+    ${S.crews.filter(c => c !== from).map(c => `<button class="btn wide" style="margin-bottom:8px"
+      onclick="moveAll('${from}','${c}')">All ${active.length} → crew ${c}</button>`).join('')}
+    <button class="btn wide bad" onclick="moveAll('${from}','')">Unschedule all ${active.length}</button>`);
+}
+function moveAll(from, to){
+  const active = PTS.filter(p => { const r = rec(p.id), st = ST[r.status].step;
+    return r.crew === from && st >= STEP_BUILD && st < STEP_AUDIT; });
+  active.forEach(p => {
+    const r = rec(p.id);
+    if (!to){ r.crew = null; r.status = 'ready_construction'; hist(p.id, 'Pulled off crew ' + from); }
+    else { r.crew = to; r.assignedAt = new Date().toISOString(); hist(p.id, 'Rescheduled from crew ' + from + ' to crew ' + to); }
+  });
+  save(); closeSheet(); renderAll(); drawPins();
+  toast(active.length + ' point' + (active.length===1?'':'s') + (to ? ' → crew ' + to : ' unscheduled'), 'ok');
+}
+
+/* ---------- asbuilts in one place ---------- */
+let ABQ = '';
+function asbuiltCard(){
+  const q = ABQ.toLowerCase().trim();
+  let list = PTS.filter(p => ST[rec(p.id).status].step >= STEP_AUDIT);
+  if (q) list = list.filter(p => (p.wo+' '+p.sec+' '+p.pt+' '+p.grid+' '+(rec(p.id).crew||'')).toLowerCase().includes(q));
+  list = list.sort((a,b) => (ST[rec(b.id).status].n - ST[rec(a.id).status].n) || a.sec.localeCompare(b.sec));
+  return `<div class="card"><h3><span class="grow">Asbuilts</span>
+    <span class="hint" style="text-transform:none;letter-spacing:0">${list.length} ready</span></h3>
+    <div class="body">
+      <div class="btnrow">${Object.values(WOS).map(w =>
+        `<button class="btn" onclick="showDoc('wo','${w.wo}')">WO ${w.wo} package</button>`).join('')}</div>
+      <p class="hint" style="margin-top:8px">The work order package is every point on that job with units, adders,
+        T&amp;E and the memos. Print to PDF from the browser share sheet.</p>
+      <div style="height:10px"></div>
+      <input placeholder="Find a point — grid ID, section, crew" value="${esc(ABQ)}"
+        oninput="ABQ=this.value;renderHome()" autocomplete="off">
+    </div>
+    <div class="body tight">${list.slice(0,15).map(p => {
+      const st = ST[rec(p.id).status];
+      return `<div class="itm">
+        <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
+        <div class="col" onclick="go('point','${p.id}')" style="cursor:pointer">
+          <div class="t" style="font-size:13px">${p.wo} · ${p.sec} Pt ${p.pt}
+            <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+          <div class="s">${st.short}${rec(p.id).crew?` · crew ${esc(rec(p.id).crew)}`:''}${
+            canSeeMoney()?` · ${money0(ptTotals(p).total)}`:''}</div></div>
+        <div class="r"><button class="btn sm pri" onclick="showDoc('point','${p.id}')">Asbuilt</button></div></div>`;
+      }).join('') || '<div class="empty">Nothing has passed audit yet</div>'}
+      ${list.length > 15 ? `<div class="itm"><div class="col"><div class="s">+ ${list.length-15} more — search above</div></div></div>` : ''}</div>
+  </div>`;
 }
 
 /* ---------------- PROJECT MANAGER — everything ---------------- */
@@ -3531,7 +3740,8 @@ function pmHome(){
         ${mg.noRoster?`${mg.noRoster} crew-day${mg.noRoster===1?'':'s'} has no hours logged at all, so its cost reads as zero and this margin is flattering. `:''}
         Log the crew on the DFR tab to make it real.</p>` : ''}
       <p class="hint" style="margin-top:6px">Cost basis: labor at ${Math.round(S.cost.laborPct*100)}% of bill rate,
-        equipment at ${Math.round(S.cost.equipPct*100)}%. Material is not in yet.
+        equipment at ${Math.round(S.cost.equipPct*100)}%${S.cost.gfOn?`, plus the General Foreman's day split
+        ${activeCrews(today())} ways (${money0(gfShare(today()))} per crew)`:''}. Material is not in yet.
         <b>Set your real burdened rates under Setup before you trust this.</b></p>
     </div></div>
 
@@ -4320,6 +4530,34 @@ function renderSet(){
     <p class="hint" style="margin-top:8px">Blended crew cost currently ${money(blendedLaborCost())}/hr, used where a
       day has hours on site but no crew logged.</p>
     <hr>
+    <div class="row"><span class="col" style="font-size:13.5px">Charge the General Foreman across the crews</span>
+      <button class="btn sm ${S.cost.gfOn?'ok':''}" onclick="S.cost.gfOn=!S.cost.gfOn;save();renderSet();renderAll()">
+        ${S.cost.gfOn?'On':'Off'}</button></div>
+    ${S.cost.gfOn ? `<div class="grid2" style="margin-top:10px">
+      <div><label class="f">GF classification</label>
+        <select onchange="S.cost.gfClass=this.value;save();renderSet();renderAll()">
+          ${LAB.map(l => `<option ${l.name===S.cost.gfClass?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>
+      <div><label class="f">GF hours per day</label>
+        <input type="number" step="0.5" min="0" value="${+S.cost.gfHours||10}"
+          onchange="S.cost.gfHours=Math.max(0,+this.value);save();renderSet();renderAll()"></div>
+    </div>
+    <p class="hint" style="margin-top:8px">His day costs ${money0(gfDayCost())} and is split
+      ${activeCrews(today())} ways today — <b>${money0(gfShare(today()))} on each crew-day</b>. Split by how many crews
+      actually worked, so a day with two crews out carries more GF per crew than a day with four.</p>` : ''}
+    <hr>
+    <div class="grid2">
+      <div><label class="f">Daily target margin %</label>
+        <input type="number" step="1" min="0" max="200" value="${Math.round(targetMargin()*100)}"
+          onchange="S.cost.targetMargin=Math.max(0,+this.value/100);save();renderSet();renderAll()"></div>
+      <div><label class="f">Standard crew-day</label>
+        <input value="${money0(stdCrewDayCost())}" disabled></div>
+    </div>
+    <p class="hint" style="margin-top:8px">The office schedule shows a bar per crew that fills when the day's booked
+      work covers that crew's cost plus this margin. A crew with no roster logged falls back to the standard day —
+      <b>five men</b> (foreman, two linemen, an equipment operator and an apprentice) with a bucket and a digger
+      derrick for ${STD_HOURS} hours: ${money0(stdCrewLabor())} labor + ${money0(stdCrewEquip())} equipment${
+      S.cost.gfOn?` + ${money0(gfShare(today()))} GF`:''}.</p>
+    <hr>
     <div class="scrollx"><table class="dt">
       <thead><tr><th>Classification</th><th class="n">Bill $/hr</th><th class="n">Your cost $/hr</th></tr></thead>
       <tbody>${LAB.map(l => `<tr><td>${esc(l.name)}</td><td class="n">${money(l.st)}</td>
@@ -4568,17 +4806,13 @@ function seedDemo(){
     if (dt.getDay() === 0 || dt.getDay() === 6) continue;
     dates.push(dt.toISOString().slice(0,10));
   }
-  const ASSIGN = { '2677991':['412','418'], '2671633':['425'] };
-  S.crews = ['412','418','425'];
-  const FOREMAN = { '412':'R. Alvarez', '418':'T. Boone', '425':'M. Ruiz' };
-  const roster = crew => ([
-    { kind:'Labor', name:'LINE FOREMAN',    st:10, ot:crew==='412'?1:0 },
-    { kind:'Labor', name:'JOURNEY LINEMAN', st:10, ot:crew==='412'?1:0 },
-    { kind:'Labor', name:'JOURNEY LINEMAN', st:10, ot:0 },
-    { kind:'Labor', name:'GROUNDMAN',       st:10, ot:0 },
-    { kind:'Equipment', name:'Bucket Truck', st:10, ot:0 },
-    { kind:'Equipment', name:'Line Truck / Digger Derrick', st:9, ot:0 }
-  ]);
+  const ASSIGN = { '2677991':['412','418','431'], '2671633':['425'] };
+  S.crews = ['412','418','425','431'];
+  const FOREMAN = { '412':'R. Alvarez', '418':'T. Boone', '425':'M. Ruiz', '431':'D. Whitfield' };
+  /* CPE's standard crew — foreman, two linemen, an equipment operator, an apprentice */
+  const roster = crew => STD_CREW.map(name => ({ kind:'Labor', name,
+      st:STD_HOURS, ot:(crew === '412' && (name === 'LINE FOREMAN' || name === 'JOURNEY LINEMAN')) ? 1 : 0 }))
+    .concat(STD_EQUIP.map((name,i) => ({ kind:'Equipment', name, st:i ? STD_HOURS-1 : STD_HOURS, ot:0 })));
   /* tiny placeholder images so a few hundred of them still fit in device storage */
   const cv = document.createElement('canvas'); cv.width = cv.height = 150;
   const g = cv.getContext('2d');
@@ -4617,7 +4851,7 @@ function seedDemo(){
   /* ---- worked points, ageing through build → audit → invoice ---- */
   dates.forEach((d, di) => {
     Object.keys(ASSIGN).forEach(wo => ASSIGN[wo].forEach(crew => {
-      const perDay = crew === '425' ? 2 : (di % 3 === 0 ? 3 : 2);
+      const perDay = crew === '425' ? 2 : (di === last && crew === '412' ? 4 : di % 3 === 0 ? 3 : 2);
       for (let k = 0; k < perDay; k++){
         const p = queue[wo].shift(); if (!p) return;
         const r = rec(p.id); n++;
@@ -4681,7 +4915,7 @@ function seedDemo(){
     S.crews.forEach(crew => {
       const D = dayRec(d, crew);
       D.foreman = FOREMAN[crew]; D.weather = 'Hot, PM storms'; D.jsa = 'Complete';
-      D.onCrew = '4';
+      D.onCrew = String(STD_CREW.length);
       const startH = 7, endH = crew === '412' ? 18 : 17.5;
       D.startedAt = new Date(d + 'T07:00:00').toISOString();
       D.start = new Date(D.startedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -4746,7 +4980,7 @@ function seedDemo(){
   S.settings.filter = 'all'; S.settings.view = null;
   save(); drawPins(); fitJob(); renderAll();
   const staged = {}; PTS.forEach(p => { const k = rec(p.id).status; staged[k] = (staged[k]||0)+1; });
-  toast(`Sample job loaded — ${n} points built, ${front.length} in pre-con, every stage populated`, 'ok');
+  toast(`Sample job loaded — ${n} points built across ${S.crews.length} crews, ${front.length} in pre-con`, 'ok');
 }
 /* ---------- sync chip ---------- */
 function renderSync(){
