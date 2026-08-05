@@ -983,7 +983,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.7da6ac-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.d27462-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1598,7 +1598,7 @@ function drawPins(){
   if (LINES) { MAP.removeLayer(LINES); LINES = null; }
   const f = S.settings.filter;
   const R = (S.settings.route || { ids:[] });
-  const list = jobPts().filter(p => matchFilter(p, f) || R.ids.includes(p.id));
+  const list = mapPool().filter(p => matchFilter(p, f) || R.ids.includes(p.id));
   const secs = {}, seen = {};
   UNMAPPED = [];
   list.forEach(p => {
@@ -1616,40 +1616,56 @@ function drawPins(){
     const m = L.marker([lat,lng], { icon:pinIcon(p), zIndexOffset: CUR===p.id?1000:0 }).addTo(MAP);
     m.on('click', () => { CUR = p.id; go('point', p.id); });
     MARKERS[p.id] = m;
-    (secs[p.sec] = secs[p.sec] || []).push([c.lat,c.lng]);
+    (secs[p.wo + '|' + p.sec] = secs[p.wo + '|' + p.sec] || []).push([c.lat,c.lng]);
   });
   const segs = Object.values(secs).filter(a => a.length > 1);
   if (segs.length) LINES = L.polyline(segs, { color:'#3b82f6', weight:2, opacity:.5, dashArray:'4 4' }).addTo(MAP);
   if (typeof drawRoute === 'function') drawRoute();
   renderChips(); renderLegend();
 }
+/** what the map is showing — one work order, or both for anyone above a crew */
+function mapPool(){
+  return (S.settings.allWO && role() !== 'foreman') ? PTS.slice() : jobPts();
+}
+function bothJobs(){ return S.settings.allWO && role() !== 'foreman'; }
 function fitJob(){
   if (!MAP) return;
-  const pts = jobPts().map(p => coord(p)).filter(Boolean).map(c => [c.lat,c.lng]);
+  const pts = mapPool().map(p => coord(p)).filter(Boolean).map(c => [c.lat,c.lng]);
   if (!pts.length) return;
   MAP.fitBounds(L.latLngBounds(pts).pad(0.18));
 }
+function toggleAllWO(){
+  S.settings.allWO = !S.settings.allWO;
+  S.settings.view = null;                       // refit, the extent just changed
+  save(); drawPins(); fitJob(); renderAll();
+  toast(bothJobs() ? 'Showing both work orders' : 'Showing WO ' + S.settings.wo);
+}
 function renderChips(){
+  const pool = mapPool(), all = bothJobs();
   const wc = document.getElementById('wochips');
-  wc.innerHTML = Object.values(WOS).map(w =>
-    `<button class="chip ${w.wo===S.settings.wo?'sel':''}" onclick="pickWO('${w.wo}')">WO ${w.wo} · ${w.points} pts</button>`).join('');
-  const counts = {}; jobPts().forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
+  wc.innerHTML =
+    (role() !== 'foreman' ? `<button class="chip ${all?'sel':''}" onclick="toggleAllWO()">Both jobs · ${PTS.length} pts</button>` : '') +
+    Object.values(WOS).map(w =>
+    `<button class="chip ${!all && w.wo===S.settings.wo?'sel':''}" onclick="pickWO('${w.wo}')">WO ${w.wo} · ${w.points} pts</button>`).join('');
+  const counts = {}; pool.forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
   document.getElementById('filterchips').innerHTML =
-    `<button class="chip ${S.settings.filter==='all'?'sel':''}" onclick="pickFilter('all')">All ${jobPts().length}</button>` +
+    `<button class="chip ${S.settings.filter==='all'?'sel':''}" onclick="pickFilter('all')">All ${pool.length}</button>` +
     ORDER.filter(k => counts[k]).map(k =>
       `<button class="chip ${S.settings.filter===k?'sel':''}" onclick="pickFilter('${k}')"
         style="${S.settings.filter===k?`background:${ST[k].col};border-color:${ST[k].col}`:''}">
         <i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>${ST[k].n} ${ST[k].short} ${counts[k]}</button>`).join('')
     + SUSP.map(sp => {
-        const n = jobPts().filter(p => matchFilter(p, 'need:'+sp.k)).length;
+        const n = pool.filter(p => matchFilter(p, 'need:'+sp.k)).length;
         return n ? `<button class="chip ${S.settings.filter==='need:'+sp.k?'sel':''}"
           onclick="pickFilter('need:${sp.k}')">needs ${sp.lbl.toLowerCase()} ${n}</button>` : ''; }).join('')
-    + (() => { const n = jobPts().filter(p => matchFilter(p, 'need:photos')).length;
+    + (() => { const n = pool.filter(p => matchFilter(p, 'need:photos')).length;
         return n ? `<button class="chip ${S.settings.filter==='need:photos'?'sel':''}"
           onclick="pickFilter('need:photos')">not ridden ${n}</button>` : ''; })()
     + (UNMAPPED.length ? `<button class="chip" onclick="showUnmapped()">${UNMAPPED.length} off-pole ⓘ</button>` : '');
   const w = WOS[S.settings.wo];
-  document.getElementById('hdrsub').textContent = w.customer + ' · WO ' + w.wo;
+  document.getElementById('hdrsub').textContent = all
+    ? w.customer + ' · both work orders'
+    : w.customer + ' · WO ' + w.wo;
 }
 function showUnmapped(){
   openSheet('Work with no single pole', `
@@ -1657,10 +1673,14 @@ function showUnmapped(){
       They have no grid ID to plot, so they live off the map. Open them here, or drop a pin on one if you want it mapped.</p>
     ${UNMAPPED.map(p => { const r = rec(p.id), x = ptTotals(p);
       return `<button class="itm" onclick="closeSheet();go('point','${p.id}')">
-        <div class="col"><div class="t">${p.sec} · Pt ${p.pt}</div><div class="s">${esc(p.grid)} · ${x.planned} units</div></div>
+        <div class="col"><div class="t">${bothJobs()?p.wo+' · ':''}${p.sec} · Pt ${p.pt}</div>
+          <div class="s">${esc(p.grid)} · ${x.planned} units</div></div>
         <div class="r"><span class="st" style="background:${ST[r.status].col}22;color:${ST[r.status].ink};border:1px solid ${ST[r.status].col}">${ST[r.status].n} ${ST[r.status].short}</span></div></button>`; }).join('')}`);
 }
-function pickWO(wo){ S.settings.wo = wo; S.settings.view = null; save(); drawPins(); fitJob(); renderAll(); }
+function pickWO(wo){
+  S.settings.wo = wo; S.settings.allWO = false; S.settings.view = null;
+  save(); drawPins(); fitJob(); renderAll();
+}
 function pickFilter(f){ S.settings.filter = f; save(); drawPins(); }
 /** one filter vocabulary shared by the map and the points list */
 function matchFilter(p, f){
@@ -1683,8 +1703,11 @@ function matchFilter(p, f){
   return true;
 }
 function renderLegend(){
-  const t = jobTotals(), open = S.settings.legend !== false;
-  const counts = {}; jobPts().forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
+  const open = S.settings.legend !== false, pool = mapPool();
+  const t = bothJobs()
+    ? pool.reduce((a,p) => { const x = ptTotals(p); a.total += x.total; a.done += x.done; return a; }, { total:0, done:0 })
+    : jobTotals();
+  const counts = {}; pool.forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
   const rows = '<div class="cols">' + ORDER.map(k =>
     `<div onclick="pickFilter('${k}')" style="cursor:pointer;opacity:${counts[k]?1:.4}">
       <i style="background:${ST[k].col}"></i><b style="width:10px;text-align:center;color:${ST[k].col}">${ST[k].n}</b>
@@ -2512,7 +2535,7 @@ function renderList(){
     .concat([['photos','Has photos'],['mine','My crew']]);
   document.getElementById('listchips').innerHTML =
     (role() !== 'foreman'
-      ? `<button class="chip ${both?'sel':''}" onclick="S.settings.allWO=!S.settings.allWO;save();renderList()">${
+      ? `<button class="chip ${both?'sel':''}" onclick="toggleAllWO()">${
           both ? 'Both jobs' : 'This job only'}</button>` : '') +
     F.map(([k,l]) => `<button class="chip ${S.settings.filter===k?'sel':''}"
       onclick="S.settings.filter='${k}';save();renderList();drawPins()"
@@ -3674,7 +3697,8 @@ function pipelineCard(st){
     <span class="hint" style="text-transform:none;letter-spacing:0">${scopePts(SCOPE).length} points</span></h3>
     <div class="body tight">${ORDER.map(k => {
       const n = counts[k]||0, v = st[k]||0;
-      return `<button class="itm" style="opacity:${n?1:.45}" onclick="S.settings.filter='${k}';save();go('map')">
+      return `<button class="itm" style="opacity:${n?1:.45}"
+        onclick="S.settings.filter='${k}';S.settings.allWO=${SCOPE==='all'};if('${SCOPE}'!=='all')S.settings.wo='${SCOPE}';S.settings.view=null;save();go('map');drawPins();fitJob()">
         <b style="width:20px;text-align:center;color:${ST[k].col};font-size:15px">${ST[k].n}</b>
         <div class="col"><div class="t" style="font-size:13.5px">${ST[k].lbl}</div>
           <div class="bar" style="margin-top:5px"><i style="width:${Math.round(100*v/tot)}%;background:${ST[k].col}"></i></div></div>
@@ -3715,7 +3739,7 @@ function portfolioCard(){
       const last = days.length ? days[days.length-1].date : null;
       const idle = last ? Math.round((Date.now() - new Date(last+'T12:00:00').getTime())/864e5) : null;
       const pc = t.est ? Math.round(100*t.booked/t.est) : 0;
-      return `<button class="itm" onclick="S.settings.wo='${w.wo}';setScope('${w.wo}')">
+      return `<button class="itm" onclick="S.settings.wo='${w.wo}';S.settings.allWO=false;S.settings.view=null;save();setScope('${w.wo}')">
         <div class="col">
           <div class="t">WO ${w.wo} — ${esc(w.name.split('—').pop().trim())}</div>
           <div class="s">${t.touched}/${t.pts} points · ${money0(t.booked)} of ${money0(t.est)}${
