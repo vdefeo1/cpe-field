@@ -983,7 +983,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.89d4ec-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.7da6ac-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1291,7 +1291,7 @@ const Store = (() => {
 /* ---------- state ---------- */
 const DEF = {
   settings:{
-    basemap:'imagery', wo:'2677991', filter:'all', view:null, legend:true,
+    basemap:'imagery', wo:'2677991', filter:'all', view:null, legend:true, allWO:false,
     // georeference: grid "NNNNN-EEEEE" -> lat/lng.  First number = northing index.
     geo:{ refN:30875, refE:32814, lat:27.7185, lng:-82.2905, ftPerUnit:10, swapXY:false, rot:0 },
     gmKey:'', esriKey:'', foreman:'', crew:'412', notify:false, crewSeesMoney:false, role:'pm'
@@ -2488,45 +2488,54 @@ function auditFail(id){
 /* ============================================================
    LIST
    ============================================================ */
+/** the Points tab is one job by default; anyone above a crew can widen it to both */
+/** the Points tab is one job by default; anyone above a crew can widen it to both */
+function listPool(){
+  return (S.settings.allWO && role() !== 'foreman') ? PTS.slice() : jobPts();
+}
 function renderList(){
-  const w = WOS[S.settings.wo], t = jobTotals();
+  const pool = listPool(), both = S.settings.allWO && role() !== 'foreman';
+  const t = jobTotals();
+  const g = st => pool.filter(p => rec(p.id).status === st).length;
   document.getElementById('jobtiles').innerHTML = `
-    <div class="tile"><b>${t.complete}/${t.pts}</b><span>pts approved</span></div>
-    <div class="tile"><b>${t.done}</b><span>units done</span></div>
+    <div class="tile"><b>${pool.filter(p => ST[rec(p.id).status].step >= STEP_LOCKED).length}/${pool.length}</b><span>through audit</span></div>
+    <div class="tile"><b>${g('new')}</b><span>not ridden</span></div>
     ${canSeeMoney()
-      ? `<div class="tile"><b>${money0(t.total)}</b><span>booked</span></div>
-         <div class="tile"><b>${money0(t.est)}</b><span>design est</span></div>`
-      : `<div class="tile"><b>${t.awaiting}</b><span>awaiting qa</span></div>
-         <div class="tile"><b>${t.planned}</b><span>units on job</span></div>`}`;
-  const F = [['all','All'],['open','Open'],['qa','QA queue'],['done','Complete'],['photos','Has photos']];
-  document.getElementById('listchips').innerHTML = F.map(([k,l]) =>
-    `<button class="chip ${S.settings.filter===k?'sel':''}" onclick="S.settings.filter='${k}';save();renderList();drawPins()">${l}</button>`).join('');
-  const f = S.settings.filter;
-  const list = jobPts().filter(p => {
-    const r = rec(p.id);
-    if (f === 'open') return ST[r.status].step < 2;
-    if (f === 'qa') return r.status === 'ready_audit' || r.status === 'correction';
-    if (f === 'done') return ST[r.status].step >= 3;
-    if (f === 'photos') return r.photos.length > 0;
-    return true;
-  });
+      ? `<div class="tile"><b>${money0(pool.reduce((s,p)=>s+ptTotals(p).total,0))}</b><span>booked</span></div>
+         <div class="tile"><b>${money0(pool.reduce((s,p)=>s+ptTotals(p).estValue,0))}</b><span>design est</span></div>`
+      : `<div class="tile"><b>${g('ready_audit')}</b><span>with the gf</span></div>
+         <div class="tile"><b>${pool.reduce((s,p)=>s+p.units.length,0)}</b><span>units on job</span></div>`}`;
+
+  const counts = {}; pool.forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
+  const F = [['all','All ' + pool.length]]
+    .concat(ORDER.filter(k => counts[k]).map(k => [k, ST[k].n + ' ' + ST[k].short + ' ' + counts[k]]))
+    .concat([['photos','Has photos'],['mine','My crew']]);
+  document.getElementById('listchips').innerHTML =
+    (role() !== 'foreman'
+      ? `<button class="chip ${both?'sel':''}" onclick="S.settings.allWO=!S.settings.allWO;save();renderList()">${
+          both ? 'Both jobs' : 'This job only'}</button>` : '') +
+    F.map(([k,l]) => `<button class="chip ${S.settings.filter===k?'sel':''}"
+      onclick="S.settings.filter='${k}';save();renderList();drawPins()"
+      style="${S.settings.filter===k&&ST[k]?`background:${ST[k].col};border-color:${ST[k].col}`:''}">${
+      ST[k]?`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>`:''}${l}</button>`).join('');
+
+  const list = pool.filter(p => matchFilter(p, S.settings.filter));
   document.getElementById('ptlist').innerHTML = list.map(p => {
-    const r = rec(p.id), x = ptTotals(p);
+    const r = rec(p.id), x = ptTotals(p), st = ST[r.status], needs = pointNeeds(p.id);
     return `<button class="itm" onclick="go('point','${p.id}')">
+      <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
       <div class="col">
-        <div class="t">${p.sec} · Pt ${p.pt} <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
-        <div class="s">${x.planned} planned${r.adders.length?` · +${r.adders.length} added`:''}${r.te.length?` · T&E`:''}${r.photos.length?` · ${r.photos.length} 📷`:''}</div>
-        <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%"></i></div>
+        <div class="t">${both?p.wo+' · ':''}${p.sec} Pt ${p.pt} <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+        <div class="s">${st.short}${r.crew?` · crew ${esc(r.crew)}`:''} · ${x.done}/${x.planned} units${
+          r.adders.length?` · +${r.adders.length} added`:''}${r.photos.length?` · ${r.photos.length} photos`:''}</div>
+        ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
+        <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
       </div>
-      <div class="r"><span class="st" style="background:${ST[r.status].col}22;color:${ST[r.status].ink};border:1px solid ${ST[r.status].col}">${ST[r.status].n} ${ST[r.status].short}</span><br>
+      <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span><br>
         <span style="font-size:13px;color:var(--txt);font-weight:700">${canSeeMoney()&&x.total?money0(x.total):''}</span></div>
     </button>`;
-  }).join('') || '<div class="empty">No points match this filter</div>';
+  }).join('') || '<div class="empty">Nothing matches this filter</div>';
 }
-
-/* ============================================================
-   QA / QC QUEUE
-   ============================================================ */
 function renderQA(){
   const g = st => PTS.filter(p => rec(p.id).status === st);
   const wait = g('ready_audit'), corr = g('correction'), inv = g('ready_invoice');
@@ -3574,7 +3583,88 @@ function pmHome(){
     </table></div></div></div>
 
   ${variance()}` : ''}
+
+  ${allPointsCard()}
   <div style="height:14px"></div>`;
+}
+
+/* ---------- every work point, one list ---------- */
+let APQ = '', APSORT = 'stage', APALL = false;
+const AP_SORTS = {
+  stage:   { lbl:'Stage',    fn:(a,b) => ST[rec(a.id).status].n - ST[rec(b.id).status].n || a.sec.localeCompare(b.sec) },
+  section: { lbl:'Section',  fn:(a,b) => (a.wo+a.sec).localeCompare(b.wo+b.sec) || String(a.pt).localeCompare(String(b.pt), undefined, {numeric:true}) },
+  value:   { lbl:'Booked',   fn:(a,b) => ptTotals(b).total - ptTotals(a).total },
+  est:     { lbl:'Estimate', fn:(a,b) => ptTotals(b).estValue - ptTotals(a).estValue },
+  variance:{ lbl:'Variance', fn:(a,b) => Math.abs(ptTotals(b).total - ptTotals(b).estValue) - Math.abs(ptTotals(a).total - ptTotals(a).estValue) },
+  crew:    { lbl:'Crew',     fn:(a,b) => String(rec(a.id).crew||'zz').localeCompare(String(rec(b.id).crew||'zz')) },
+  needs:   { lbl:'Blockers', fn:(a,b) => pointNeeds(b.id).length - pointNeeds(a.id).length }
+};
+/** whatever is standing between this point and its next stage */
+function pointNeeds(id){
+  const st = ST[rec(id).status].step;
+  if (st < ST.ready_construction.step) return preconBlockers(id);
+  if (st === ST.ready_construction.step) return ['no crew assigned'];
+  if (st >= STEP_BUILD && st < STEP_AUDIT) return auditBlockers(id);
+  if (rec(id).status === 'ready_audit') return ['with the GF'];
+  if (rec(id).status === 'ready_invoice') return ['to invoice'];
+  return [];
+}
+function allPointsCard(){
+  const q = APQ.toLowerCase().trim();
+  let list = scopePts(SCOPE);
+  if (q) list = list.filter(p => (p.wo+' '+p.sec+' '+p.pt+' '+p.grid+' '+ST[rec(p.id).status].lbl+' '+
+    (rec(p.id).crew||'')+' '+p.units.map(u => u.code+' '+u.desc).join(' ')).toLowerCase().includes(q));
+  list = list.slice().sort(AP_SORTS[APSORT].fn);
+  const shown = APALL ? list : list.slice(0, 25);
+  return `<div class="card"><h3><span class="grow">All work points</span>
+    <span class="hint" style="text-transform:none;letter-spacing:0">${list.length}${
+      SCOPE==='all'?' · both jobs':' · WO '+SCOPE}</span></h3>
+    <div class="body">
+      <input placeholder="Search grid ID, section, crew, unit code, stage" value="${esc(APQ)}"
+        oninput="APQ=this.value;renderHome()" autocomplete="off">
+      <div class="chipbar" style="margin-top:8px">${Object.keys(AP_SORTS).map(k =>
+        `<button class="chip ${APSORT===k?'sel':''}" onclick="APSORT='${k}';renderHome()">${AP_SORTS[k].lbl}</button>`).join('')}</div>
+    </div>
+    <div class="body tight">${shown.map(p => {
+      const r = rec(p.id), t = ptTotals(p), st = ST[r.status], needs = pointNeeds(p.id);
+      const v = t.total - t.estValue;
+      return `<button class="itm" onclick="go('point','${p.id}')">
+        <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
+        <div class="col">
+          <div class="t" style="font-size:13px">${p.wo} · ${p.sec} Pt ${p.pt}
+            <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+          <div class="s">${st.short}${r.crew?` · crew ${esc(r.crew)}`:''} · ${t.done}/${t.planned} units${
+            needs.length?` · <span style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</span>`:''}</div>
+        </div>
+        <div class="r"><span style="color:var(--txt);font-weight:700">${t.total?money0(t.total):'—'}</span><br>
+          <span class="hint">${t.total&&Math.abs(v)>1?(v>0?'+':'')+money0(v):'est '+money0(t.estValue)}</span></div>
+      </button>`; }).join('') || '<div class="empty">Nothing matches that search</div>'}</div>
+    <div class="body">
+      <div class="btnrow">
+        ${list.length > 25 ? `<button class="btn" onclick="APALL=${!APALL};renderHome()">${
+          APALL ? 'Show first 25' : 'Show all ' + list.length}</button>` : ''}
+        <button class="btn" onclick="exportPointsCSV()">CSV</button>
+        <button class="btn" onclick="go('list')">Points tab</button>
+      </div>
+      <p class="hint" style="margin-top:8px">Every point in scope, whatever stage it is at, with what is standing in its
+        way. The right column is booked against the design estimate.</p>
+    </div></div>`;
+}
+function exportPointsCSV(){
+  const head = ['WO','Section','Point','Grid ID','Stage','Crew','Units done','Units planned',
+                'Booked','Design est','Variance','Blockers','Lat','Lng'].join(',') + '\n';
+  const rows = scopePts(SCOPE).slice().sort(AP_SORTS[APSORT].fn).map(p => {
+    const r = rec(p.id), t = ptTotals(p), c = coord(p);
+    return [p.wo, p.sec, p.pt, p.grid, ST[r.status].lbl, r.crew||'', t.done, t.planned,
+            t.total.toFixed(2), t.estValue.toFixed(2), (t.total-t.estValue).toFixed(2),
+            '"' + pointNeeds(p.id).join('; ').replace(/"/g,"'") + '"',
+            c?c.lat.toFixed(6):'', c?c.lng.toFixed(6):''].join(',');
+  }).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([head+rows], { type:'text/csv' }));
+  a.download = `CPE_workpoints_${SCOPE}_${today()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Work point CSV exported','ok');
 }
 /** every stage, count and dollars, tap to filter the map */
 function pipelineCard(st){
