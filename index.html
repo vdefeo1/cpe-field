@@ -675,7 +675,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   --txt:#e7edf3; --dim:#94a3b3; --dim2:#6b7a8c;
   --accent:#3b82f6; --accentd:#1d4ed8;
   --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --qa:#a855f7; --bill:#06b6d4;
-  --tap:44px; --safe-b:env(safe-area-inset-bottom,0px);
+  --tap:44px; --safe-b:env(safe-area-inset-bottom,0px); --nav:56px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;height:100%;overscroll-behavior-y:none}
@@ -723,6 +723,7 @@ main{flex:1 1 auto;position:relative;overflow:hidden}
 nav{
   flex:0 0 auto;background:var(--bg2);border-top:1px solid var(--line);
   display:flex;padding-bottom:var(--safe-b);
+  height:calc(var(--nav) + var(--safe-b));
 }
 nav button{
   flex:1;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;
@@ -893,6 +894,17 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .ph.add svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
 .ph.add span{font-size:9.5px;margin-top:3px}
 
+/* ---------- sticky action bar ---------- */
+.actionbar{
+  position:fixed;left:0;right:0;bottom:calc(var(--nav) + var(--safe-b));z-index:700;
+  padding:9px 12px calc(9px + 0px);background:linear-gradient(to top,rgba(11,14,18,.98),rgba(11,14,18,.92));
+  border-top:1px solid var(--line);backdrop-filter:blur(8px);
+}
+.actionbar .btnrow{gap:8px}
+.actionbar .btn.big{min-height:48px;font-size:14.5px;font-weight:700}
+.actionbar .bar-note{font-size:11.5px;color:var(--dim);text-align:center;padding:3px 0}
+
+
 /* ---------- data table ---------- */
 .scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table.dt{width:100%;min-width:430px;border-collapse:collapse;font-size:11.5px}
@@ -971,7 +983,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.50a55f-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.de63b4-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1040,7 +1052,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div></section>
 
   <!-- ================= POINT DETAIL ================= -->
-  <section class="view" id="v-point"><div class="pad" id="ptbody"></div></section>
+  <section class="view" id="v-point"><div class="pad" id="ptbody"></div><div class="actionbar noprint" id="ptbar"></div></section>
 
   <!-- ================= QA / QC ================= -->
   <section class="view" id="v-qa"><div class="pad" id="qabody"></div></section>
@@ -1179,31 +1191,29 @@ function suspDone(id){ return suspOpen(id).length === 0; }
    itself the moment the last item comes back. */
 function evalPrecon(id){
   const r = rec(id);
-  if (ST[r.status].step > STEP_PRECON) return false;          // past pre-con, leave it alone
-  const sp = susp(id);
-  const answered = SUSP.every(x => sp[x.k].needed !== null);  // all three questions decided
-  const ridden = photosOf(id, 'before').length > 0 && answered;
-  const target = !ridden ? 'new' : (suspDone(id) ? 'ready_construction' : 'pending_suspense');
+  // Only re-grades a point the specialist has already signed off. Getting out of
+  // "Not ridden out" is his Complete button, never automatic.
+  if (r.status !== 'pending_suspense' && r.status !== 'ready_construction') return false;
+  const target = suspDone(id) ? 'ready_construction' : 'pending_suspense';
   if (r.status === target) return false;
   const from = ST[r.status].lbl;
   r.status = target;
-  hist(id, from + ' → ' + ST[target].lbl + (
-    target === 'ready_construction' ? ' — ridden out, nothing outstanding'
-    : target === 'pending_suspense' ? ' — ridden out, ' + suspOpen(id).length + ' item(s) on order'
-    : ' — ride-out incomplete'));
+  hist(id, from + ' → ' + ST[target].lbl + (target === 'ready_construction'
+    ? ' — last suspense item came back'
+    : ' — a suspense item went back open: ' + suspOpen(id).map(o => o.item.lbl).join(', ')));
   if (typeof routeAutoTick === 'function' && target !== 'new') routeAutoTick(id);
   return true;
 }
 /** what this point still needs before it can go to construction */
 function preconNeeds(id){
-  const out = [];
-  const n = photosOf(id,'before').length;
-  const min = (PHOTO.find(x => x.k === 'before') || {}).min || 0;
-  if (!n) out.push('before photos');
-  else if (n < min) out.push(`before photos — ${n} of ${min}`);
-  suspOpen(id).forEach(o => out.push(o.item.lbl.toLowerCase() + ' — ' + o.why));
-  return out;
+  const r = rec(id);
+  if (r.status === 'new') return preconBlockers(id);
+  return suspOpen(id).map(o => o.item.lbl.toLowerCase() + ' — ' + o.why);
 }
+
+/* ---------- progress carried to the next day ---------- */
+function progressLog(id){ const r = rec(id); return r.progress = r.progress || []; }
+function lastProgress(id){ const l = progressLog(id); return l.length ? l[l.length-1] : null; }
 /** one-letter codes for what is outstanding, for the map pin */
 function suspCodes(id){
   const seen = {};
@@ -1213,16 +1223,57 @@ function suspCodes(id){
 
 /* ---------- photo kinds ---------- */
 const PHOTO = [
-  { k:'before',    lbl:'Before',            min:5, hint:'Existing condition, all angles' },
-  { k:'after',     lbl:'After',             min:5, hint:'Finished work, all angles' },
-  { k:'switching', lbl:'Switching order',   min:0, hint:'Only if one was issued' },
-  { k:'locate',    lbl:'Locate response',   min:0, hint:'The marked-up response sheet' },
-  { k:'briefing',  lbl:'Pre-job briefing',  min:0, hint:'Signed tailboard / JSA' }
+  { k:'before',    lbl:'Before',            min:5, when:'precon', hint:'Existing condition, all angles' },
+  { k:'after',     lbl:'After',             min:5, when:'audit',  hint:'Finished work, all angles' },
+  { k:'briefing',  lbl:'Pre-job briefing',  min:1, when:'audit',  hint:'Signed tailboard / JSA' },
+  { k:'switching', lbl:'Switching order',   min:1, when:'audit',  hint:'Required when a switching order was issued',
+    only:id => susp(id).switching.needed === true },
+  { k:'locate',    lbl:'Locate response',   min:1, when:'audit',  hint:'The marked-up response sheet — it arrives after the ride-out',
+    only:id => susp(id).locates.needed === true }
 ];
+/** photo kinds that actually apply to this point */
+function photoReq(id, when){
+  return PHOTO.filter(k => k.min && (!when || k.when === when) && (!k.only || k.only(id)));
+}
 function photosOf(id, k){ return rec(id).photos.filter(p => p.phase === k); }
-function photoShort(id){
-  return PHOTO.filter(x => x.min && photosOf(id, x.k).length < x.min)
+function photoShort(id, when){
+  return photoReq(id, when).filter(x => photosOf(id, x.k).length < x.min)
               .map(x => `${x.lbl} ${photosOf(id, x.k).length}/${x.min}`);
+}
+
+/* ---------- gates ----------
+   Nothing moves forward until its own list is empty. Each entry is a plain
+   sentence the crew can act on. */
+function preconBlockers(id){
+  const out = [];
+  photoReq(id, 'precon').forEach(k => {
+    const n = photosOf(id, k.k).length;
+    if (n < k.min) out.push(`${k.lbl} photos — ${n} of ${k.min}`);
+  });
+  SUSP.forEach(sp => { if (susp(id)[sp.k].needed == null) out.push(`${sp.lbl} — answer yes or no`); });
+  return out;
+}
+function auditBlockers(id){
+  const p = pt(id), r = rec(id), out = [];
+  photoReq(id).forEach(k => {
+    const n = photosOf(id, k.k).length;
+    if (n < k.min) out.push(`${k.lbl} photos — ${n} of ${k.min}`);
+  });
+  const unstated = p.units.filter(u => !(r.units[u.seq] || {}).state);
+  if (unstated.length) out.push(`${unstated.length} planned unit${unstated.length===1?'':'s'} with no Done / Partial / Not done`);
+  const noMemo = p.units.filter(u => { const e = r.units[u.seq] || {};
+    return (e.state === 'partial' || e.state === 'not') && !String(e.note||'').trim(); });
+  if (noMemo.length) out.push(`${noMemo.length} partial or not-done unit${noMemo.length===1?'':'s'} with no memo`);
+  const noAuth = r.adders.filter(a => !String(a.note||'').trim());
+  if (noAuth.length) out.push(`${noAuth.length} added unit${noAuth.length===1?'':'s'} with nobody named as authorizing it`);
+  const badQty = r.adders.filter(a => !Number(a.qty));
+  if (badQty.length) out.push(`${badQty.length} added unit${badQty.length===1?'':'s'} with no quantity`);
+  const sw = susp(id).switching;
+  if (sw.needed === true && !String(sw.number||'').trim()) out.push('Switching order number not entered');
+  suspOpen(id).forEach(o => out.push(`${o.item.lbl} — ${o.why}`));
+  if (!p.units.some(u => (r.units[u.seq]||{}).state === 'complete') && !r.adders.length)
+    out.push('Nothing marked done yet');
+  return out;
 }
 
 /* ---------- storage that never throws ---------- */
@@ -1857,7 +1908,47 @@ function renderPoint(id){
     </div>
   </div>
   <button class="btn wide" onclick="go('list')">Back to points</button>
-  <div style="height:14px"></div>`;
+  <div style="height:86px"></div>`;
+  const bar = document.getElementById('ptbar');
+  if (bar) bar.innerHTML = actionBar(p, r);
+}
+
+/** the bar that sits above the nav — whatever this role can do right now */
+function actionBar(p, r){
+  const id = p.id, rl = role(), st = ST[r.status];
+  const B = [];
+  if (r.status === 'new' && (rl === 'specialist' || rl === 'pm' || rl === 'gf')){
+    const n = preconBlockers(id).length;
+    B.push(`<button class="btn ${n?'':'ok'} big" onclick="completePrecon('${id}')">
+      Complete pre-con${n?` · ${n} left`:''}</button>`);
+  }
+  if ((r.status === 'assigned' || r.status === 'in_progress' || r.status === 'correction')
+      && (rl === 'foreman' || rl === 'pm' || rl === 'gf')){
+    const n = auditBlockers(id).length;
+    B.push(`<button class="btn big" onclick="saveProgress('${id}')">Save progress</button>`);
+    B.push(`<button class="btn ${n?'':'ok'} big" onclick="submitAudit('${id}')">
+      Complete${n?` · ${n} left`:' → audit'}</button>`);
+  }
+  if (r.status === 'ready_audit' && (rl === 'gf' || rl === 'pm')){
+    B.push(`<button class="btn bad big" onclick="auditFail('${id}')">Correction</button>`);
+    B.push(`<button class="btn ok big" onclick="auditPass('${id}')">Pass audit</button>`);
+  }
+  if (r.status === 'ready_construction' && (rl === 'office' || rl === 'pm' || rl === 'gf'))
+    B.push(`<button class="btn pri big" onclick="assignSheet('${id}')">Assign a crew</button>`);
+  if (r.status === 'ready_invoice' && (rl === 'office' || rl === 'pm'))
+    B.push(`<button class="btn pri big" onclick="moveStatus('${id}','complete')">Mark invoiced</button>`);
+  if (!B.length) return `<div class="bar-note">Stage ${st.n} · ${st.lbl} — sits with ${
+    ROLE_LBL[st.who] || 'nobody'}</div>`;
+  return `<div class="btnrow">${B.join('')}</div>`;
+}
+function assignSheet(id){
+  const r = rec(id);
+  openSheet('Assign ' + fullLabel(pt(id)), `
+    <label class="f">Crew</label>
+    <select id="asg" style="min-height:44px;width:100%">${S.crews.map(c =>
+      `<option ${r.crew===c?'selected':''}>${c}</option>`).join('')}</select>
+    <div style="height:10px"></div>
+    <button class="btn pri wide" onclick="assignCrew('${id}');closeSheet()">Assign — it drops on their home screen</button>`);
 }
 
 /** the ten-stage rail, current stage lit */
@@ -2140,24 +2231,38 @@ function shrink(file, max, q){
 }
 
 /* ---------- status workflow ---------- */
+/** a red-dot list of what is outstanding, or a green all-clear */
+function checklist(title, items, foot){
+  return (title ? `<div class="hint" style="letter-spacing:.06em;text-transform:uppercase">${title}</div>` : '') +
+    (items.length
+      ? `<div class="body tight" style="padding:6px 0 0">${items.map(x =>
+          `<div class="itm"><b style="width:16px;color:var(--bad)">•</b>
+           <div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('')}</div>`
+      : `<div class="row" style="margin-top:6px;gap:6px"><b style="color:var(--ok)">✓</b>
+         <span style="font-size:13px">All clear</span></div>`) +
+    (foot ? `<p class="hint" style="margin:8px 0 10px">${foot}</p>` : '<div style="height:8px"></div>');
+}
 function statusCard(p,r){
   const rl = role(), id = p.id, st = ST[r.status], open = suspOpen(id), short = photoShort(id);
   const A = [];   // available actions for this role at this status
   const act = (cls, label, fn, note) => A.push(`<button class="btn ${cls} wide" onclick="${fn}">${label}</button>${
     note?`<p class="hint" style="margin:6px 0 10px">${note}</p>`:'<div style="height:8px"></div>'}`);
 
-  if (ST[r.status].step <= STEP_PRECON && ST[r.status].step < ST.ready_construction.step){
-    const needs = preconNeeds(id);
-    A.push(`<div class="hint" style="letter-spacing:.06em;text-transform:uppercase">Still needed before construction</div>
-      <div class="body tight" style="padding:6px 0 0">${needs.map(x =>
-        `<div class="itm"><b style="width:16px;color:var(--warn)">•</b><div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('')}</div>
-      <p class="hint" style="margin:8px 0 10px">It releases itself: shoot the before photos and answer the three
-        questions, and the point moves to Ready for construction on its own — or to Pending suspense items if
-        something has to be ordered. No button to press.</p>`);
+  if (r.status === 'new'){
+    const block = preconBlockers(id);
+    A.push(checklist('To finish the ride-out', block,
+      block.length ? 'Before photos are mandatory. Answer all three questions, then hit Complete pre-con at the bottom.'
+                   : 'Nothing outstanding — hit Complete pre-con at the bottom.'));
   }
-  if (r.status === 'ready_construction' && open.length)
-    A.push(`<p class="hint" style="color:var(--warn)">${open.length} suspense item${open.length===1?'':'s'} went back
-      open after this was released — ${open.map(o => o.item.lbl+': '+o.why).join(' · ')}</p>`);
+  if (r.status === 'pending_suspense'){
+    A.push(`<p class="hint">Ridden out by ${esc(r.preconBy || 'the specialist')}${
+      r.preconAt ? ' on ' + new Date(r.preconAt).toLocaleDateString() : ''}. Waiting on:</p>` +
+      checklist('', open.map(o => o.item.lbl + ' — ' + o.why),
+        'Anyone — office, specialist, GF, or the foreman for the switching order number — can fill these in. The point releases itself to Ready for construction the moment the last one lands.'));
+  }
+  if (r.status === 'ready_construction')
+    A.push(`<p class="hint">Ridden out and clear${r.preconAt ? ', signed off ' + new Date(r.preconAt).toLocaleDateString() : ''}.
+      Waiting on the office to assign a crew.</p>`);
 
   if (r.status === 'ready_construction' && (rl === 'office' || rl === 'pm' || rl === 'gf')){
     A.push(`<label class="f">Assign to crew</label>
@@ -2169,14 +2274,14 @@ function statusCard(p,r){
       <p class="hint" style="margin:0 0 10px">It drops onto that foreman's home screen.</p>`);
   }
 
-  if ((r.status === 'assigned' || r.status === 'in_progress' || r.status === 'correction') && (rl === 'foreman' || rl === 'pm' || rl === 'gf')){
-    const t = ptTotals(p);
-    act('qa','Submit for audit','submitAudit(\''+id+'\')',
-      [ short.length ? 'Short on photos — ' + short.join(', ') + '.' : '',
-        (t.done + t.part) ? '' : 'No units marked done yet.',
-        susp(id).switching.needed === true && !String(susp(id).switching.number||'').trim()
-          ? 'Switching order number not entered — the GF audit checks for it.' : '',
-        'Submitting notifies the General Foreman.' ].filter(Boolean).join(' '));
+  if (r.status === 'assigned' || r.status === 'in_progress' || r.status === 'correction'){
+    const block = auditBlockers(id), lp = lastProgress(id);
+    if (lp && r.status !== 'correction')
+      A.push(`<p class="hint">Left off ${lp.date} by crew ${esc(lp.crew||'—')} — ${lp.done} of ${lp.planned} units${
+        lp.note ? ` — “${esc(lp.note)}”` : ''}</p>`);
+    A.push(checklist('Before it can go to audit', block,
+      block.length ? 'Save progress if you are coming back tomorrow. Complete closes it out and sends it to the GF.'
+                   : 'Everything is in. Complete sends it to the GF.'));
   }
 
   if (r.status === 'ready_audit' && (rl === 'gf' || rl === 'pm')){
@@ -2225,17 +2330,66 @@ function assignCrew(id){
   save(); renderAll(); drawPins();
   notify('New work assigned', fullLabel(pt(id)) + ' → crew ' + crew);
 }
+/** specialist signs off the ride-out. Hard-blocked on the before photos. */
+function completePrecon(id){
+  const block = preconBlockers(id);
+  if (block.length){
+    openSheet('Cannot complete this point yet',
+      `<p class="hint">Every line has to clear first.</p><div style="height:8px"></div>` +
+      block.map(x => `<div class="itm"><b style="width:16px;color:var(--bad)">•</b>
+        <div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('') +
+      `<div style="height:10px"></div><p class="hint">Before photos are mandatory — the ride-out is not on record without them.</p>`);
+    return;
+  }
+  const r = rec(id);
+  const target = suspDone(id) ? 'ready_construction' : 'pending_suspense';
+  r.status = target;
+  r.preconAt = new Date().toISOString();
+  r.preconBy = role();
+  hist(id, 'Pre-con complete — ' + (target === 'ready_construction'
+    ? 'nothing outstanding, released to construction'
+    : suspOpen(id).map(o => o.item.lbl).join(', ') + ' still on order'));
+  if (typeof routeAutoTick === 'function') routeAutoTick(id);
+  save(); renderAll(); drawPins();
+  toast(fullLabel(pt(id)) + ' → ' + ST[target].lbl, 'ok');
+  if (target === 'ready_construction') notify('Ready for construction', fullLabel(pt(id)) + ' — clear to assign');
+}
+
+/** foreman keeps the point open and hands his stopping place to tomorrow */
+function saveProgress(id){
+  const p = pt(id), r = rec(id), t = ptTotals(p);
+  const note = prompt('Where did you leave off? (what is left, what is in the way)') ?? '';
+  progressLog(id).push({ ts:new Date().toISOString(), date:today(), crew:r.crew || DFRCREW || '',
+    done:t.done, part:t.part, planned:t.planned, note });
+  r.carry = true;
+  if (r.status === 'assigned' || r.status === 'correction'){ r.status = 'in_progress'; }
+  hist(id, `Progress saved — ${t.done} of ${t.planned} units done${note ? ' — ' + note : ''}`);
+  save(); renderAll(); drawPins();
+  toast(`Saved — ${t.done}/${t.planned} units. It is top of your list tomorrow.`, 'ok');
+}
+
+/** foreman closes the point out. Hard-blocked until the record is complete. */
 function submitAudit(id){
-  const short = photoShort(id), sw = susp(id).switching;
-  const warn = [];
-  if (short.length) warn.push('Photos short: ' + short.join(', '));
-  if (sw.needed === true && !String(sw.number||'').trim()) warn.push('No switching order number entered');
-  if (warn.length && !confirm(warn.join('\n') + '\n\nSubmit for audit anyway?')) return;
+  const block = auditBlockers(id);
+  if (block.length){
+    openSheet('Not ready for audit',
+      `<p class="hint">The GF audit checks all of this, so the app checks it first. Clear these and the button opens up.</p>
+       <div style="height:8px"></div>` +
+      block.map(x => `<div class="itm"><b style="width:16px;color:var(--bad)">•</b>
+        <div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('') +
+      `<div style="height:10px"></div>
+       <button class="btn wide" onclick="closeSheet();go('point','${id}')">Back to the point</button>
+       <div style="height:8px"></div>
+       <button class="btn wide qa" onclick="closeSheet();saveProgress('${id}')">Not finishing today — save progress</button>`);
+    return;
+  }
   const r = rec(id);
   r.status = 'ready_audit'; r.submitted = r.submittedAt = new Date().toISOString();
-  hist(id, 'Submitted for audit' + (warn.length ? ' with warnings: ' + warn.join('; ') : ''));
+  r.carry = false;
+  hist(id, 'Complete — submitted for audit');
   save(); renderAll(); drawPins();
   notify('Audit requested', fullLabel(pt(id)) + ' is ready for review');
+  toast(fullLabel(pt(id)) + ' → Ready for audit', 'ok');
 }
 function auditPass(id){
   const note = prompt('Audit note (optional)') ?? '';
@@ -3058,6 +3212,12 @@ function foremanHome(){
     <div class="tile"><b style="color:${noPhoto.length?'#fbbf24':'inherit'}">${noPhoto.length}</b><span>photos short</span></div>
   </div>
   <div style="height:10px"></div>
+
+  ${(() => { const carry = mine.filter(p => rec(p.id).status === 'in_progress' && lastProgress(p.id));
+     return carry.length ? card('Pick up where you left off', carry.length,
+       carry.map(p => { const lp = lastProgress(p.id), t = ptTotals(p);
+         return ptItem(p, `${lp.date} · ${t.done} of ${t.planned} units${lp.note?` · “${esc(lp.note)}”`:''}`); }).join(''),
+       'Saved by whoever worked it last. The units already booked stay booked — today adds to them.') : ''; })()}
 
   ${routeCard('mine')}
 
@@ -4276,11 +4436,12 @@ function seedDemo(){
         r.status = stage;
         const sub = new Date(d+'T17:10:00').toISOString();
         const full = stage !== 'in_progress';
-        addShots(p, 'before', full ? 5 : 3, d);
-        addShots(p, 'after',  full ? 5 : 1, d);
-        addShots(p, 'briefing', 1, d);
+        addShots(p, 'before', 5, d);
+        addShots(p, 'after',  full ? 5 : 2, d);
+        if (full || n % 2) addShots(p, 'briefing', 1, d);
         if (needsLoc) addShots(p, 'locate', 1, d);
         if (needsSw && !swMissing) addShots(p, 'switching', 1, d);
+        r.preconAt = new Date(d + 'T07:30:00').toISOString(); r.preconBy = 'specialist';
         if (stage === 'ready_audit'){
           r.submitted = r.submittedAt = sub;
           if (n % 7 === 0){ const old = new Date(); old.setHours(old.getHours()-31); r.submittedAt = r.submitted = old.toISOString(); }
@@ -4296,6 +4457,12 @@ function seedDemo(){
           r.qa = { result:'passed', by:'General Foreman', ts:r.approvedAt, note:'Framing and grounding verified.' };
           lockRates(p.id);
           if (stage === 'complete'){ const bd = new Date(d+'T10:00:00'); bd.setDate(bd.getDate()+2); r.billedAt = bd.toISOString(); }
+        }
+        if (stage === 'in_progress' && n % 3 === 0){
+          r.progress = [{ ts:new Date(d+'T16:30:00').toISOString(), date:d, crew,
+            done:ptTotals(p).done, part:ptTotals(p).part, planned:p.units.length,
+            note:'Pole set, framing left — coming back with the digger' }];
+          r.carry = true;
         }
         hist(p.id, 'Sample data seeded');
       }
@@ -4357,8 +4524,11 @@ function seedDemo(){
       r.crew = S.crews[i % S.crews.length]; r.assignedAt = new Date().toISOString();
     }
     hist(p.id, 'Sample data seeded');
-    if (m > 2 && m < 6) evalPrecon(p.id);                      // let the rule place it
-    else if (m === 6) r.status = 'assigned';
+    if (m > 2){
+      r.preconAt = new Date(yday + 'T09:00:00').toISOString(); r.preconBy = 'specialist';
+      r.status = suspDone(p.id) ? 'ready_construction' : 'pending_suspense';
+      if (m === 6){ r.status = 'assigned'; r.assignedAt = new Date().toISOString(); }
+    }
   });
 
   S.settings.crew = '412'; S.settings.foreman = FOREMAN['412'];
