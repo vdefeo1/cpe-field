@@ -983,7 +983,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.de63b4-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.89d4ec-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1849,14 +1849,14 @@ function renderPoint(id){
 
   ${suspCard(id)}
 
-  <div class="card">
+  <div class="card" id="c-units">
     <h3><span class="grow">Planned units — from the job card</span><span>${canSeeMoney()?money(t.plan):t.done+" done"}</span></h3>
     ${!can && role()==='foreman' && ST[r.status].step < STEP_BUILD
       ? `<div class="body"><p class="hint">Locked until the office assigns this point to a crew.</p></div>` : ''}
     <div class="body tight">${p.units.map(u => unitRow(p,u,can)).join('') || '<div class="empty">No planned units at this point</div>'}</div>
   </div>
 
-  <div class="card">
+  <div class="card" id="c-adders">
     <h3><span class="grow">Added units — not on the design</span><span>${canSeeMoney()?money(t.add):r.adders.length||""}</span></h3>
     <div class="body tight">${r.adders.map((a,i) => adderRow(a,i,can)).join('')}</div>
     <div class="body">${can?`<button class="btn wide" onclick="addAdderSheet()">
@@ -1874,7 +1874,7 @@ function renderPoint(id){
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="c-photos">
     <h3><span class="grow">Photos</span>
       <span class="hint" style="text-transform:none;letter-spacing:0">${r.photos.length}${short.length?` · short: ${short.join(', ')}`:''}</span></h3>
     <div class="body">${PHOTO.map(k => photoSection(id,k)).join('<hr>')}</div>
@@ -1933,13 +1933,55 @@ function actionBar(p, r){
     B.push(`<button class="btn bad big" onclick="auditFail('${id}')">Correction</button>`);
     B.push(`<button class="btn ok big" onclick="auditPass('${id}')">Pass audit</button>`);
   }
-  if (r.status === 'ready_construction' && (rl === 'office' || rl === 'pm' || rl === 'gf'))
-    B.push(`<button class="btn pri big" onclick="assignSheet('${id}')">Assign a crew</button>`);
+  if (r.status === 'ready_construction'){
+    if (rl === 'office' || rl === 'pm' || rl === 'gf')
+      B.push(`<button class="btn pri big" onclick="assignSheet('${id}')">Assign a crew</button>`);
+    if (rl === 'foreman')
+      B.push(`<button class="btn pri big" onclick="claimPoint('${id}')">Take it — crew ${esc(S.settings.crew||'')}</button>`);
+  }
   if (r.status === 'ready_invoice' && (rl === 'office' || rl === 'pm'))
     B.push(`<button class="btn pri big" onclick="moveStatus('${id}','complete')">Mark invoiced</button>`);
   if (!B.length) return `<div class="bar-note">Stage ${st.n} · ${st.lbl} — sits with ${
     ROLE_LBL[st.who] || 'nobody'}</div>`;
   return `<div class="btnrow">${B.join('')}</div>`;
+}
+/** a foreman picking up ready work himself, no office round-trip */
+function claimPoint(id){
+  const r = rec(id), crew = S.settings.crew || S.crews[0];
+  r.crew = crew; r.assignedAt = new Date().toISOString(); r.status = 'assigned';
+  hist(id, 'Taken by crew ' + crew + ' (self-assigned)');
+  save(); renderAll(); drawPins();
+  toast(fullLabel(pt(id)) + ' → crew ' + crew, 'ok');
+}
+/** office assigns a whole section at once — one pole at a time is not a workflow */
+function bulkAssignSheet(){
+  const ready = PTS.filter(p => rec(p.id).status === 'ready_construction');
+  if (!ready.length){ toast('Nothing is ready for construction yet','bad'); return; }
+  const bySec = {};
+  ready.forEach(p => (bySec[p.wo + ' · ' + p.sec] = bySec[p.wo + ' · ' + p.sec] || []).push(p.id));
+  openSheet(`Assign ${ready.length} ready point${ready.length===1?'':'s'}`, `
+    <label class="f">Crew</label>
+    <select id="basg" style="min-height:44px;width:100%">${S.crews.map(c => `<option>${c}</option>`).join('')}</select>
+    <p class="hint" style="margin-top:8px">Pick the crew, then tap a section to hand them all of it.</p>
+    <div style="height:8px"></div>
+    ${Object.keys(bySec).sort().map(k2 => `<button class="btn wide" style="margin-bottom:8px"
+      onclick="bulkAssign(${JSON.stringify(bySec[k2]).replace(/"/g,'&quot;')})">
+      ${k2} — ${bySec[k2].length} point${bySec[k2].length===1?'':'s'}</button>`).join('')}
+    <button class="btn wide pri" onclick="bulkAssign(${JSON.stringify(ready.map(p=>p.id)).replace(/"/g,'&quot;')})">
+      Everything ready — ${ready.length} points</button>`);
+}
+function bulkAssign(ids){
+  const sel = document.getElementById('basg');
+  const crew = sel ? sel.value : S.crews[0];
+  ids.forEach(id => {
+    const r = rec(id);
+    if (r.status !== 'ready_construction') return;
+    r.crew = crew; r.assignedAt = new Date().toISOString(); r.status = 'assigned';
+    hist(id, 'Assigned to crew ' + crew + ' (bulk)');
+  });
+  save(); closeSheet(); renderAll(); drawPins();
+  notify('Work assigned', ids.length + ' points → crew ' + crew);
+  toast(ids.length + ' point' + (ids.length===1?'':'s') + ' assigned to crew ' + crew, 'ok');
 }
 function assignSheet(id){
   const r = rec(id);
@@ -1965,13 +2007,19 @@ function suspCard(id){
   const sp = susp(id), r = rec(id), open = suspOpen(id);
   const show = ST[r.status].step <= STEP_AUDIT || open.length;
   if (!show) return '';
-  return `<div class="card"><h3><span class="grow">Suspense items — pre-con</span>
+  return `<div class="card" id="c-susp"><h3><span class="grow">Suspense items — pre-con</span>
     <span class="st" style="background:${open.length?'#4a3410':'#0d3b22'};color:${open.length?'#fbbf24':'#6ee7b7'}">
       ${open.length ? open.length+' open' : 'all clear'}</span></h3>
     <div class="body tight">${SUSP.map(s => suspRow(id, s, sp[s.k])).join('')}</div>
-    <div class="body"><p class="hint">${open.length
-      ? 'This point cannot go to Ready for construction until every question is answered and everything ordered has come back.'
-      : 'Everything is answered and back. This point can be released to construction.'}</p></div></div>`;
+    <div class="body"><p class="hint">${
+      ST[r.status].step > STEP_PRECON
+        ? (open.length ? 'These went back open after the point was released — the audit will catch it.'
+                       : 'Answered and back. Kept here for the audit trail.')
+        : r.status === 'new'
+          ? 'Answer all three, shoot the before photos, then hit Complete pre-con at the bottom.'
+          : open.length
+            ? 'It releases itself to Ready for construction the moment the last one comes back. Anyone can fill these in — the switching order number comes from the foreman at the pole.'
+            : 'Answered and back.'}</p></div></div>`;
 }
 function suspRow(id, s, v){
   const yes = v.needed === true, no = v.needed === false;
@@ -2355,6 +2403,26 @@ function completePrecon(id){
   if (target === 'ready_construction') notify('Ready for construction', fullLabel(pt(id)) + ' — clear to assign');
 }
 
+/** scroll the point view to the card that fixes a blocker */
+function jumpTo(anchor){
+  closeSheet();
+  const el = document.getElementById('c-' + anchor);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+/** GF or PM pushes a point through with the exceptions on the record */
+function overrideAudit(id){
+  const block = auditBlockers(id);
+  const why = prompt('Why is this going to audit incomplete? This is written into the record.') ?? '';
+  if (!why.trim()){ toast('An override needs a reason','bad'); return; }
+  const r = rec(id);
+  r.overrides = r.overrides || [];
+  r.overrides.push({ ts:new Date().toISOString(), who:role(), why, blockers:block });
+  r.status = 'ready_audit'; r.submitted = r.submittedAt = new Date().toISOString(); r.carry = false;
+  hist(id, 'Override to audit by ' + role() + ' — ' + why + ' — outstanding: ' + block.join('; '));
+  save(); closeSheet(); renderAll(); drawPins();
+  toast('Sent to audit with ' + block.length + ' exception' + (block.length===1?'':'s'), 'ok');
+}
+
 /** foreman keeps the point open and hands his stopping place to tomorrow */
 function saveProgress(id){
   const p = pt(id), r = rec(id), t = ptTotals(p);
@@ -2372,15 +2440,24 @@ function saveProgress(id){
 function submitAudit(id){
   const block = auditBlockers(id);
   if (block.length){
+    const jump = [];
+    if (block.some(x => /photo/i.test(x))) jump.push(['photos','Photos']);
+    if (block.some(x => /unit|done|memo/i.test(x))) jump.push(['units','Units']);
+    if (block.some(x => /added unit/i.test(x))) jump.push(['adders','Added units']);
+    if (block.some(x => /locates|MOT|switching/i.test(x))) jump.push(['susp','Suspense items']);
     openSheet('Not ready for audit',
       `<p class="hint">The GF audit checks all of this, so the app checks it first. Clear these and the button opens up.</p>
        <div style="height:8px"></div>` +
       block.map(x => `<div class="itm"><b style="width:16px;color:var(--bad)">•</b>
         <div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('') +
-      `<div style="height:10px"></div>
-       <button class="btn wide" onclick="closeSheet();go('point','${id}')">Back to the point</button>
-       <div style="height:8px"></div>
-       <button class="btn wide qa" onclick="closeSheet();saveProgress('${id}')">Not finishing today — save progress</button>`);
+      `<div style="height:12px"></div>
+       ${jump.length ? `<div class="btnrow" style="margin-bottom:8px">${jump.map(([a,l]) =>
+         `<button class="btn" onclick="jumpTo('${a}')">${l}</button>`).join('')}</div>` : ''}
+       <button class="btn wide qa" onclick="closeSheet();saveProgress('${id}')">Not finishing today — save progress</button>
+       ${(role() === 'gf' || role() === 'pm') ? `<div style="height:8px"></div>
+         <button class="btn wide bad" onclick="overrideAudit('${id}')">Override — send it anyway with a reason</button>
+         <p class="hint" style="margin-top:6px">General Foreman and Project Manager only. The reason and the exact
+           exceptions are written into the point's history and flagged on the audit screen.</p>` : ''}`);
     return;
   }
   const r = rec(id);
@@ -2479,6 +2556,7 @@ function qaItem(p){
       ${sw.needed===true && !String(sw.number||'').trim()?`<div class="s" style="color:var(--warn)">switching order # missing</div>`:''}
       ${sw.needed===true && String(sw.number||'').trim()?`<div class="s">switching order ${esc(sw.number)}</div>`:''}
       ${open.length?`<div class="s" style="color:var(--warn)">${open.length} suspense item${open.length===1?'':'s'} open</div>`:''}
+      ${(r.overrides||[]).length ? `<div class="s" style="color:var(--bad)">sent with ${r.overrides[r.overrides.length-1].blockers.length} exception(s) — “${esc(r.overrides[r.overrides.length-1].why)}”</div>` : ''}
       ${r.qa && r.qa.note ? `<div class="s">“${esc(r.qa.note)}”</div>` : ''}</div>
     <div class="r"><div class="row" style="justify-content:flex-end">${thumbs}</div></div></button>`;
 }
@@ -3172,9 +3250,9 @@ function specialistHome(){
       notRidden.slice(0,25).map(p => ptItem(p, `${ptTotals(p).planned} planned units · no before photos`)).join('')
       + (notRidden.length > 25 ? `<div class="itm"><div class="col"><div class="s">+ ${notRidden.length-25} more — use the route</div></div></div>` : '')) : ''}
 
-  ${ready.length ? card('Released to construction', ready.length,
-      ready.slice(0,12).map(p => ptItem(p, 'Clear — waiting on the office to assign a crew')).join(''),
-      'Nothing for you to do on these. The office picks the crew.') : ''}
+  ${ready.length ? card('Released — waiting on a crew', ready.length,
+      ready.slice(0,12).map(p => ptItem(p, 'Clear · nobody assigned yet')).join(''),
+      'Nothing for you to do on these. The office assigns the crew — until they do, no foreman can open them.') : ''}
 
   <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
     <button class="btn" onclick="go('list')">All points</button></div>
@@ -3212,6 +3290,16 @@ function foremanHome(){
     <div class="tile"><b style="color:${noPhoto.length?'#fbbf24':'inherit'}">${noPhoto.length}</b><span>photos short</span></div>
   </div>
   <div style="height:10px"></div>
+
+  ${(() => { const up = PTS.filter(p => rec(p.id).status === 'ready_construction');
+     return up.length ? `<div class="card" style="border-color:${ST.ready_construction.col}">
+       <h3><span class="grow">Ready to build — not assigned</span>
+         <span class="st" style="background:${ST.ready_construction.col}22;color:${ST.ready_construction.ink}">${up.length}</span></h3>
+       <div class="body tight">${up.slice(0,8).map(p => ptItem(p, `${ptTotals(p).planned} planned units · cleared by the specialist`,
+         `<button class="btn sm pri" onclick="event.stopPropagation();claimPoint('${p.id}')">Take it</button>`)).join('')}
+         ${up.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${up.length-8} more</div></div></div>` : ''}</div>
+       <div class="body"><p class="hint">The office normally assigns these. If you are standing there, take it —
+         it goes on your crew and the assignment is logged.</p></div></div>` : ''; })()}
 
   ${(() => { const carry = mine.filter(p => rec(p.id).status === 'in_progress' && lastProgress(p.id));
      return carry.length ? card('Pick up where you left off', carry.length,
@@ -3332,9 +3420,18 @@ function officeHome(){
   </div>
   <div style="height:10px"></div>
 
-  ${toAssign.length ? card('Ready for construction — assign a crew', toAssign.length,
-      toAssign.map(p => ptItem(p, `${ptTotals(p).planned} planned units · all suspense clear`)).join(''),
-      'Open a point and pick the crew. It drops onto that foreman\'s home screen.') : ''}
+  ${toAssign.length ? `<div class="card" style="border-color:${ST.ready_construction.col}">
+      <h3><span class="grow">Ready for construction — nobody is on it</span>
+        <span class="st" style="background:${ST.ready_construction.col}22;color:${ST.ready_construction.ink}">${toAssign.length}</span></h3>
+      <div class="body">
+        <p class="hint">The specialist has cleared these and no crew can touch them until you assign one. This is the
+          step that stalls a job.</p>
+        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign a crew — by section or all of it</button>
+      </div>
+      <div class="body tight">${toAssign.slice(0,12).map(p => ptItem(p, `${ptTotals(p).planned} planned units · clear`,
+        `<button class="btn sm pri" onclick="event.stopPropagation();assignSheet('${p.id}')">Assign</button>`)).join('')}
+        ${toAssign.length > 12 ? `<div class="itm"><div class="col"><div class="s">+ ${toAssign.length-12} more</div></div></div>` : ''}</div>
+    </div>` : ''}
 
   ${withSpec.length ? card('With the specialist', withSpec.length,
       withSpec.slice(0,10).map(p => ptItem(p, preconNeeds(p.id).slice(0,2).map(x => x.split(' — ')[0]).join(', ') || 'clear')).join('')
@@ -3447,7 +3544,7 @@ function pmHome(){
     ${jamRow('Immediate correction outstanding', b.rej, '#fca5a5')}
     ${jamRow('Photos short — audit will fail', b.noPhoto, '#fbbf24')}
     ${jamRow('Pending suspense items', b.susp, '#fbbf24')}
-    ${jamRow('Clear but no crew assigned', b.unassigned, '#67e8f9')}
+    ${jamRow('Cleared by the specialist, no crew assigned', b.unassigned, '#67e8f9')}
     ${jamRow('Started, nothing logged in 3+ days', b.idle, '#fbbf24')}
     </div></div>` : ''}
 
