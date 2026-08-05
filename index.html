@@ -765,6 +765,12 @@ nav .badge{
 .pin.sel{outline:3px solid #fff;outline-offset:1px}
 .pin.urgent{border-color:#fff;box-shadow:0 0 0 2px rgba(220,38,38,.55),0 2px 8px rgba(0,0,0,.6)}
 /* stage number — colour alone cannot separate ten states */
+.routeN{
+  display:block;min-width:18px;height:18px;padding:0 4px;background:#eab308;color:#0b0e12;
+  border:2px solid #0b0e12;border-radius:9px;font-size:10px;line-height:14px;font-weight:800;text-align:center;
+  box-shadow:0 1px 4px rgba(0,0,0,.5);
+}
+.routeN.done{background:#16a34a;color:#fff}
 .pinN{
   position:absolute;top:-5px;left:18px;min-width:14px;height:14px;padding:0 3px;
   background:#0b0e12;border:1px solid rgba(255,255,255,.35);border-radius:7px;
@@ -965,7 +971,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.50a55f-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1012,6 +1018,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div class="mapctl br">
       <button class="fab ghost" id="btnbase" title="Basemap">
         <svg viewBox="0 0 24 24"><path d="M12 3 3 7.5 12 12l9-4.5L12 3Z"/><path d="M3 12.5 12 17l9-4.5"/><path d="M3 17.5 12 22l9-4.5"/></svg>
+      </button>
+      <button class="fab ghost" id="btnroute" title="Route" onclick="go('home')">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v4a4 4 0 0 0 4 4h5.4"/></svg>
       </button>
       <button class="fab ghost" id="btnfit" title="Fit to job">
         <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
@@ -1095,29 +1104,30 @@ const CATBY = {}; CAT.forEach(u => { if (!CATBY[u.code]) CATBY[u.code] = u; });
    the map pin — colour alone cannot separate ten states reliably, so every pin
    carries its stage number too, and each status has its own filter chip. */
 const ST = {
-  new:                { n:1,  lbl:'New',                     short:'New',        col:'#64748b', ink:'#cbd5e1', step:1, who:'office' },
-  ready_precon:       { n:2,  lbl:'Ready for pre-con',       short:'Pre-con',    col:'#3b82f6', ink:'#bfdbfe', step:2, who:'specialist' },
-  pending_suspense:   { n:3,  lbl:'Pending suspense items',  short:'Suspense',   col:'#eab308', ink:'#fde68a', step:3, who:'specialist' },
-  ready_construction: { n:4,  lbl:'Ready for construction',  short:'Ready',      col:'#06b6d4', ink:'#a5f3fc', step:4, who:'office' },
-  assigned:           { n:5,  lbl:'Assigned to crew',        short:'Assigned',   col:'#7c3aed', ink:'#ddd6fe', step:5, who:'foreman' },
-  in_progress:        { n:6,  lbl:'In progress',             short:'Building',   col:'#f97316', ink:'#fed7aa', step:6, who:'foreman' },
-  ready_audit:        { n:7,  lbl:'Ready for audit',         short:'Audit',      col:'#d946ef', ink:'#f5d0fe', step:7, who:'gf' },
-  correction:         { n:8,  lbl:'Immediate correction',    short:'Correction', col:'#dc2626', ink:'#fecaca', step:7, who:'foreman' },
-  ready_invoice:      { n:9,  lbl:'Ready for invoice',       short:'Invoice',    col:'#16a34a', ink:'#bbf7d0', step:8, who:'office' },
-  complete:           { n:10, lbl:'Complete — invoiced',     short:'Complete',   col:'#0f766e', ink:'#99f6e4', step:9, who:'—' }
+  new:                { n:1, lbl:'Not ridden out',          short:'Not ridden', col:'#64748b', ink:'#cbd5e1', step:1, who:'specialist' },
+  pending_suspense:   { n:2, lbl:'Pending suspense items',  short:'Suspense',   col:'#eab308', ink:'#fde68a', step:2, who:'specialist' },
+  ready_construction: { n:3, lbl:'Ready for construction',  short:'Ready',      col:'#06b6d4', ink:'#a5f3fc', step:3, who:'office' },
+  assigned:           { n:4, lbl:'Assigned to crew',        short:'Assigned',   col:'#7c3aed', ink:'#ddd6fe', step:4, who:'foreman' },
+  in_progress:        { n:5, lbl:'In progress',             short:'Building',   col:'#f97316', ink:'#fed7aa', step:5, who:'foreman' },
+  ready_audit:        { n:6, lbl:'Ready for audit',         short:'Audit',      col:'#d946ef', ink:'#f5d0fe', step:6, who:'gf' },
+  correction:         { n:7, lbl:'Immediate correction',    short:'Correction', col:'#dc2626', ink:'#fecaca', step:6, who:'foreman' },
+  ready_invoice:      { n:8, lbl:'Ready for invoice',       short:'Invoice',    col:'#16a34a', ink:'#bbf7d0', step:7, who:'office' },
+  complete:           { n:9, lbl:'Complete — invoiced',     short:'Complete',   col:'#0f766e', ink:'#99f6e4', step:8, who:'—' }
 };
-const ORDER = ['new','ready_precon','pending_suspense','ready_construction','assigned',
+const ORDER = ['new','pending_suspense','ready_construction','assigned',
                'in_progress','ready_audit','correction','ready_invoice','complete'];
 /* thresholds used for gating */
 const STEP_BUILD   = ST.assigned.step;        // work is with a crew
+const STEP_PRECON  = ST.ready_construction.step; // pre-con is finished at or past here
 const STEP_AUDIT   = ST.ready_audit.step;     // with the GF
 const STEP_LOCKED  = ST.ready_invoice.step;   // passed audit — rates freeze here
 function stepOf(id){ return ST[rec(id).status].step; }
 function isLockedStatus(st){ return ST[st].step >= STEP_LOCKED; }
 
 /* old saved records -> new pipeline */
-const LEGACY = { not_started:'new', in_progress:'in_progress', foreman_complete:'ready_audit',
-                 qa_rejected:'correction', qa_approved:'ready_invoice', billed:'complete' };
+const LEGACY = { not_started:'new', ready_precon:'new', in_progress:'in_progress',
+                 foreman_complete:'ready_audit', qa_rejected:'correction',
+                 qa_approved:'ready_invoice', billed:'complete' };
 function migrateStatus(){
   Object.keys(S.pts).forEach(id => {
     const r = S.pts[id];
@@ -1160,6 +1170,46 @@ function suspOpen(id){
   return out;
 }
 function suspDone(id){ return suspOpen(id).length === 0; }
+
+/* ---------- the pre-con rule ----------
+   A point is "ridden out" once the specialist has shot the before photos.
+   At that moment it lands on its own: clear of suspense items → Ready for
+   construction; anything outstanding → Pending suspense items. Answering a
+   question or logging a locate response re-runs this, so a point releases
+   itself the moment the last item comes back. */
+function evalPrecon(id){
+  const r = rec(id);
+  if (ST[r.status].step > STEP_PRECON) return false;          // past pre-con, leave it alone
+  const sp = susp(id);
+  const answered = SUSP.every(x => sp[x.k].needed !== null);  // all three questions decided
+  const ridden = photosOf(id, 'before').length > 0 && answered;
+  const target = !ridden ? 'new' : (suspDone(id) ? 'ready_construction' : 'pending_suspense');
+  if (r.status === target) return false;
+  const from = ST[r.status].lbl;
+  r.status = target;
+  hist(id, from + ' → ' + ST[target].lbl + (
+    target === 'ready_construction' ? ' — ridden out, nothing outstanding'
+    : target === 'pending_suspense' ? ' — ridden out, ' + suspOpen(id).length + ' item(s) on order'
+    : ' — ride-out incomplete'));
+  if (typeof routeAutoTick === 'function' && target !== 'new') routeAutoTick(id);
+  return true;
+}
+/** what this point still needs before it can go to construction */
+function preconNeeds(id){
+  const out = [];
+  const n = photosOf(id,'before').length;
+  const min = (PHOTO.find(x => x.k === 'before') || {}).min || 0;
+  if (!n) out.push('before photos');
+  else if (n < min) out.push(`before photos — ${n} of ${min}`);
+  suspOpen(id).forEach(o => out.push(o.item.lbl.toLowerCase() + ' — ' + o.why));
+  return out;
+}
+/** one-letter codes for what is outstanding, for the map pin */
+function suspCodes(id){
+  const seen = {};
+  suspOpen(id).forEach(o => seen[o.item.lbl[0].toUpperCase()] = 1);
+  return Object.keys(seen).join('');
+}
 
 /* ---------- photo kinds ---------- */
 const PHOTO = [
@@ -1486,16 +1536,18 @@ function setBase(k){
 function pinIcon(p){
   const r = rec(p.id), st = ST[r.status], sel = CUR === p.id ? ' sel' : '';
   const urgent = r.status === 'correction' ? ' urgent' : '';
+  const badge = r.status === 'pending_suspense' ? (suspCodes(p.id) || String(st.n)) : String(st.n);
   return L.divIcon({ className:'', iconSize:[30,30], iconAnchor:[7,30],
     html:`<div class="pin${sel}${urgent}" style="background:${st.col}"><span>${label(p)}</span></div>
-          <b class="pinN" style="color:${st.col}">${st.n}</b>` });
+          <b class="pinN" style="color:${st.col}">${badge}</b>` });
 }
 function drawPins(){
   if (!MAP){ renderChips(); renderLegend(); return; }
   Object.values(MARKERS).forEach(m => MAP.removeLayer(m)); MARKERS = {};
   if (LINES) { MAP.removeLayer(LINES); LINES = null; }
   const f = S.settings.filter;
-  const list = jobPts().filter(p => matchFilter(p, f));
+  const R = (S.settings.route || { ids:[] });
+  const list = jobPts().filter(p => matchFilter(p, f) || R.ids.includes(p.id));
   const secs = {}, seen = {};
   UNMAPPED = [];
   list.forEach(p => {
@@ -1517,6 +1569,7 @@ function drawPins(){
   });
   const segs = Object.values(secs).filter(a => a.length > 1);
   if (segs.length) LINES = L.polyline(segs, { color:'#3b82f6', weight:2, opacity:.5, dashArray:'4 4' }).addTo(MAP);
+  if (typeof drawRoute === 'function') drawRoute();
   renderChips(); renderLegend();
 }
 function fitJob(){
@@ -1536,6 +1589,13 @@ function renderChips(){
       `<button class="chip ${S.settings.filter===k?'sel':''}" onclick="pickFilter('${k}')"
         style="${S.settings.filter===k?`background:${ST[k].col};border-color:${ST[k].col}`:''}">
         <i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>${ST[k].n} ${ST[k].short} ${counts[k]}</button>`).join('')
+    + SUSP.map(sp => {
+        const n = jobPts().filter(p => matchFilter(p, 'need:'+sp.k)).length;
+        return n ? `<button class="chip ${S.settings.filter==='need:'+sp.k?'sel':''}"
+          onclick="pickFilter('need:${sp.k}')">needs ${sp.lbl.toLowerCase()} ${n}</button>` : ''; }).join('')
+    + (() => { const n = jobPts().filter(p => matchFilter(p, 'need:photos')).length;
+        return n ? `<button class="chip ${S.settings.filter==='need:photos'?'sel':''}"
+          onclick="pickFilter('need:photos')">not ridden ${n}</button>` : ''; })()
     + (UNMAPPED.length ? `<button class="chip" onclick="showUnmapped()">${UNMAPPED.length} off-pole ⓘ</button>` : '');
   const w = WOS[S.settings.wo];
   document.getElementById('hdrsub').textContent = w.customer + ' · WO ' + w.wo;
@@ -1560,6 +1620,14 @@ function matchFilter(p, f){
   if (f === 'qa') return r.status === 'ready_audit' || r.status === 'correction';
   if (f === 'done') return ST[r.status].step >= STEP_LOCKED;
   if (f === 'photos') return r.photos.length > 0;
+  if (f.indexOf('need:') === 0){
+    const k = f.slice(5);
+    if (k === 'photos') return ST[r.status].step <= STEP_PRECON && !photosOf(p.id,'before').length;
+    const v = susp(p.id)[k];
+    const spec = SUSP.find(x => x.k === k);
+    return ST[r.status].step <= STEP_PRECON && spec &&
+           (v.needed == null || (v.needed && spec.required.some(x => !String(v[x]||'').trim())));
+  }
   if (f === 'mine') return (r.crew || null) === (S.settings.crew || null);
   return true;
 }
@@ -1573,7 +1641,8 @@ function renderLegend(){
   document.getElementById('legend').innerHTML =
     `<div class="hd" onclick="toggleLegend()" style="cursor:pointer">
        Stages <span style="margin-left:auto">${open?'▾':'▸'}</span></div>` +
-    (open ? rows + (canSeeMoney()
+    (open ? rows + `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line);color:var(--dim2);font-size:9.5px">
+       stage 2 pins show what is outstanding — L locates · M MOT · S switching</div>` + (canSeeMoney()
       ? `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line)">Booked<b style="margin-left:auto;padding-left:6px">${money0(t.total)}</b></div>`
       : `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line)">Units done<b style="margin-left:auto;padding-left:6px">${t.done}</b></div>`) : '');
 }
@@ -1838,10 +1907,9 @@ function setSusp(id, k, f, v){
   if (f === 'needed' && sp[k].needed === v) v = null;      // tap again to clear
   sp[k][f] = v;
   hist(id, SUSP.find(s => s.k === k).lbl + ' — ' + f + ': ' + (v === null ? 'cleared' : v === true ? 'yes' : v === false ? 'no' : v));
-  // pre-con auto-moves to pending as soon as something is outstanding
-  if (r.status === 'ready_precon' && suspOpen(id).length && Object.values(sp).some(x => x.needed === true))
-    { r.status = 'pending_suspense'; hist(id,'Moved to pending suspense items'); }
+  const moved = evalPrecon(id);
   save(); renderPoint(id); drawPins();
+  if (moved) toast(fullLabel(pt(id)) + ' → ' + ST[rec(id).status].lbl, 'ok');
 }
 
 /* ---------- photos by kind ---------- */
@@ -2039,15 +2107,19 @@ function addPhoto(id, phase){
       if (!n) { toast('Could not read those images','bad'); return; }
       hist(id, n + ' ' + lbl.toLowerCase() + ' photo' + (n===1?'':'s') + ' added');
       if (ST[rec(id).status].step >= STEP_BUILD) touch(id);
-      save(); renderPoint(id); drawPins();
-      toast(n + ' ' + lbl.toLowerCase() + ' photo' + (n===1?'':'s') + ' attached', 'ok');
+      const moved = evalPrecon(id);
+      save(); renderPoint(id); drawPins(); renderAll();
+      toast(moved ? fullLabel(pt(id)) + ' → ' + ST[rec(id).status].lbl
+                  : n + ' ' + lbl.toLowerCase() + ' photo' + (n===1?'':'s') + ' attached', 'ok');
     });
   };
   inp.click();
 }
 function delPhoto(id, pid){
   const r = rec(id); r.photos = r.photos.filter(p => p.id !== pid);
-  hist(id,'Photo removed'); save(); renderPoint(id);
+  hist(id,'Photo removed');
+  evalPrecon(id);
+  save(); renderPoint(id); drawPins();
 }
 function shrink(file, max, q){
   return new Promise((res, rej) => {
@@ -2074,18 +2146,18 @@ function statusCard(p,r){
   const act = (cls, label, fn, note) => A.push(`<button class="btn ${cls} wide" onclick="${fn}">${label}</button>${
     note?`<p class="hint" style="margin:6px 0 10px">${note}</p>`:'<div style="height:8px"></div>'}`);
 
-  if (r.status === 'new' && (rl === 'office' || rl === 'pm'))
-    act('pri','Release to pre-con','moveStatus(\''+id+'\',\'ready_precon\')',
-        'Hands it to the construction specialist to ride out and answer the suspense questions.');
-
-  if ((r.status === 'ready_precon' || r.status === 'pending_suspense') && (rl === 'specialist' || rl === 'pm' || rl === 'gf')){
-    if (open.length)
-      A.push(`<button class="btn wide" disabled>Ready for construction — ${open.length} item${open.length===1?'':'s'} open</button>
-        <p class="hint" style="margin:6px 0 10px">${open.map(o => o.item.lbl+': '+o.why).join(' · ')}</p>`);
-    else
-      act('ok','Mark ready for construction','moveStatus(\''+id+'\',\'ready_construction\')',
-          'Everything is answered and back. The office can assign a crew.');
+  if (ST[r.status].step <= STEP_PRECON && ST[r.status].step < ST.ready_construction.step){
+    const needs = preconNeeds(id);
+    A.push(`<div class="hint" style="letter-spacing:.06em;text-transform:uppercase">Still needed before construction</div>
+      <div class="body tight" style="padding:6px 0 0">${needs.map(x =>
+        `<div class="itm"><b style="width:16px;color:var(--warn)">•</b><div class="col"><div class="t" style="font-size:13px">${esc(x)}</div></div></div>`).join('')}</div>
+      <p class="hint" style="margin:8px 0 10px">It releases itself: shoot the before photos and answer the three
+        questions, and the point moves to Ready for construction on its own — or to Pending suspense items if
+        something has to be ordered. No button to press.</p>`);
   }
+  if (r.status === 'ready_construction' && open.length)
+    A.push(`<p class="hint" style="color:var(--warn)">${open.length} suspense item${open.length===1?'':'s'} went back
+      open after this was released — ${open.map(o => o.item.lbl+': '+o.why).join(' · ')}</p>`);
 
   if (r.status === 'ready_construction' && (rl === 'office' || rl === 'pm' || rl === 'gf')){
     A.push(`<label class="f">Assign to crew</label>
@@ -2889,50 +2961,6 @@ function renderHome(){
     r === 'office' ? officeHome() : r === 'specialist' ? specialistHome() : pmHome();
 }
 
-/* ---------------- CONSTRUCTION SPECIALIST ---------------- */
-function specialistHome(){
-  const precon = PTS.filter(p => rec(p.id).status === 'ready_precon');
-  const pend   = PTS.filter(p => rec(p.id).status === 'pending_suspense');
-  const clear  = pend.filter(p => suspDone(p.id));
-  const byItem = {};
-  SUSP.forEach(s2 => byItem[s2.k] = pend.concat(precon).filter(p => {
-    const v = susp(p.id)[s2.k];
-    return v.needed == null || (v.needed && s2.required.some(f => !String(v[f]||'').trim()));
-  }));
-  return `
-  <div class="card"><div class="body">
-    <div class="hint">${greet()} · Construction specialist · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
-    <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${precon.length + pend.length}</div>
-    <div class="hint">point${precon.length+pend.length===1?'':'s'} to ride out and clear${clear.length?` · ${clear.length} ready to release`:''}</div>
-  </div></div>
-
-  <div class="tiles">
-    <div class="tile"><b style="color:${ST.ready_precon.ink}">${precon.length}</b><span>to ride out</span></div>
-    <div class="tile"><b style="color:${ST.pending_suspense.ink}">${pend.length}</b><span>pending items</span></div>
-    <div class="tile"><b style="color:${ST.ready_invoice.ink}">${clear.length}</b><span>clear to release</span></div>
-    <div class="tile"><b>${PTS.filter(p => ST[rec(p.id).status].step >= ST.ready_construction.step).length}</b><span>past pre-con</span></div>
-  </div>
-  <div style="height:10px"></div>
-
-  ${clear.length ? card('Everything back — release to construction', clear.length,
-      clear.map(p => ptItem(p, 'All suspense items answered and received',
-        `<button class="btn sm ok" onclick="event.stopPropagation();moveStatus('${p.id}','ready_construction')">Release</button>`)).join(''),
-      'Releasing hands it to the office to assign a crew.') : ''}
-
-  ${card('Ready for pre-con — not yet answered', precon.length,
-      precon.map(p => ptItem(p, `${ptTotals(p).planned} planned units · ${suspOpen(p.id).length} question${suspOpen(p.id).length===1?'':'s'} open`)).join('')
-      || '<div class="empty">Nothing waiting on pre-con</div>')}
-
-  ${SUSP.map(s2 => byItem[s2.k].length ? card(s2.lbl + ' outstanding', byItem[s2.k].length,
-      byItem[s2.k].map(p => { const v = susp(p.id)[s2.k];
-        return ptItem(p, v.needed == null ? 'Not answered yet'
-          : s2.required.filter(f => !String(v[f]||'').trim())
-              .map(f => (s2.fields.find(x => x.f === f)||{}).lbl + ' missing').join(', ')); }).join('')) : '').join('')}
-
-  <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
-    <button class="btn" onclick="go('list')">All points</button></div>
-  <div style="height:14px"></div>`;
-}
 function ptItem(p, sub, right){
   const r = rec(p.id);
   return `<button class="itm" onclick="go('point','${p.id}')">
@@ -2947,6 +2975,56 @@ function card(title, right, body, foot){
 function greet(){
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Evening';
+}
+
+/* ---------------- CONSTRUCTION SPECIALIST ---------------- */
+function specialistHome(){
+  const notRidden = PTS.filter(p => rec(p.id).status === 'new');
+  const pend      = PTS.filter(p => rec(p.id).status === 'pending_suspense');
+  const ready     = PTS.filter(p => rec(p.id).status === 'ready_construction');
+  const byItem = {};
+  SUSP.forEach(s2 => byItem[s2.k] = pend.filter(p => {
+    const v = susp(p.id)[s2.k];
+    return v.needed == null || (v.needed && s2.required.some(f => !String(v[f]||'').trim()));
+  }));
+  return `
+  <div class="card"><div class="body">
+    <div class="hint">${greet()} · Construction specialist · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
+    <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${notRidden.length}</div>
+    <div class="hint">point${notRidden.length===1?'':'s'} still to ride out${pend.length?` · ${pend.length} waiting on something`:''}</div>
+    <p class="hint" style="margin-top:8px">Shoot the before photos and answer the three questions at each pole. The point
+      moves itself — clear goes straight to Ready for construction, anything ordered goes to Pending suspense items and
+      releases the moment it comes back.</p>
+  </div></div>
+
+  <div class="tiles">
+    <div class="tile"><b>${notRidden.length}</b><span>not ridden</span></div>
+    <div class="tile"><b style="color:${ST.pending_suspense.ink}">${pend.length}</b><span>pending items</span></div>
+    <div class="tile"><b style="color:${ST.ready_construction.ink}">${ready.length}</b><span>ready to build</span></div>
+    <div class="tile"><b>${PTS.filter(p => ST[rec(p.id).status].step > STEP_PRECON).length}</b><span>past pre-con</span></div>
+  </div>
+  <div style="height:10px"></div>
+
+  ${routeCard('precon')}
+
+  ${SUSP.map(s2 => byItem[s2.k].length ? card(s2.lbl + ' outstanding', byItem[s2.k].length,
+      byItem[s2.k].map(p => { const v = susp(p.id)[s2.k];
+        return ptItem(p, v.needed == null ? 'Not answered yet'
+          : s2.required.filter(f => !String(v[f]||'').trim())
+              .map(f => (s2.fields.find(x => x.f === f)||{}).lbl + ' missing').join(', ')); }).join(''),
+      s2.k === 'switching' ? 'The number itself gets typed in by the foreman at the pole — you just order it.' : '') : '').join('')}
+
+  ${notRidden.length ? card('Not ridden out yet', notRidden.length,
+      notRidden.slice(0,25).map(p => ptItem(p, `${ptTotals(p).planned} planned units · no before photos`)).join('')
+      + (notRidden.length > 25 ? `<div class="itm"><div class="col"><div class="s">+ ${notRidden.length-25} more — use the route</div></div></div>` : '')) : ''}
+
+  ${ready.length ? card('Released to construction', ready.length,
+      ready.slice(0,12).map(p => ptItem(p, 'Clear — waiting on the office to assign a crew')).join(''),
+      'Nothing for you to do on these. The office picks the crew.') : ''}
+
+  <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
+    <button class="btn" onclick="go('list')">All points</button></div>
+  <div style="height:14px"></div>`;
 }
 
 /* ---------------- FOREMAN ---------------- */
@@ -2980,6 +3058,8 @@ function foremanHome(){
     <div class="tile"><b style="color:${noPhoto.length?'#fbbf24':'inherit'}">${noPhoto.length}</b><span>photos short</span></div>
   </div>
   <div style="height:10px"></div>
+
+  ${routeCard('mine')}
 
   ${fresh.length ? card('Just dropped on you', fresh.length,
       fresh.map(p => ptItem(p, `${ptTotals(p).planned} planned units${
@@ -3042,6 +3122,8 @@ function gfHome(){
   </div>
   <div style="height:10px"></div>
 
+  ${routeCard('audit')}
+
   ${b.over.length ? card('Waiting more than 24 hours', b.over.length,
       b.over.map(p => ptItem(p, 'Submitted '+new Date(rec(p.id).submittedAt).toLocaleString(),
         `<span style="color:#fca5a5;font-weight:700">${money0(ptTotals(p).total)}</span>`)).join(''),
@@ -3074,7 +3156,7 @@ function gfHome(){
 function officeHome(){
   const ag = aging('all');
   const billed = PTS.filter(p => rec(p.id).status === 'complete');
-  const fresh = PTS.filter(p => rec(p.id).status === 'new');
+  const withSpec = PTS.filter(p => ST[rec(p.id).status].step <= ST.pending_suspense.step);
   const toAssign = PTS.filter(p => rec(p.id).status === 'ready_construction');
   return `
   <div class="card"><div class="body">
@@ -3085,7 +3167,7 @@ function officeHome(){
   <div class="tiles">
     <div class="tile"><b>${ag.toBill.length}</b><span>to invoice</span></div>
     <div class="tile"><b style="color:${toAssign.length?ST.ready_construction.ink:'inherit'}">${toAssign.length}</b><span>to assign</span></div>
-    <div class="tile"><b>${fresh.length}</b><span>new</span></div>
+    <div class="tile"><b>${withSpec.length}</b><span>in pre-con</span></div>
     <div class="tile"><b>${ag.avgBillDays?ag.avgBillDays.toFixed(1)+'d':'—'}</b><span>audit to invoice</span></div>
   </div>
   <div style="height:10px"></div>
@@ -3094,14 +3176,10 @@ function officeHome(){
       toAssign.map(p => ptItem(p, `${ptTotals(p).planned} planned units · all suspense clear`)).join(''),
       'Open a point and pick the crew. It drops onto that foreman\'s home screen.') : ''}
 
-  ${PTS.filter(p => rec(p.id).status !== 'ready_precon').length && !fresh.length && !toAssign.length
-    ? `<div class="card"><div class="body"><button class="btn wide" onclick="go('set')">Job control — reset a job to pre-con</button>
-       <p class="hint" style="margin-top:6px">Under Setup. Drops every point back on the specialist to ride out.</p></div></div>` : ''}
-
-  ${fresh.length ? card('New — release to pre-con', fresh.length,
-      fresh.map(p => ptItem(p, `${ptTotals(p).planned} planned units`,
-        `<button class="btn sm pri" onclick="event.stopPropagation();moveStatus('${p.id}','ready_precon')">Release</button>`)).join(''),
-      'Hands it to the construction specialist.') : ''}
+  ${withSpec.length ? card('With the specialist', withSpec.length,
+      withSpec.slice(0,10).map(p => ptItem(p, preconNeeds(p.id).slice(0,2).map(x => x.split(' — ')[0]).join(', ') || 'clear')).join('')
+      + (withSpec.length > 10 ? `<div class="itm"><div class="col"><div class="s">+ ${withSpec.length-10} more</div></div></div>` : ''),
+      'Nothing for you until they release. A new job starts here — Job control under Setup drops a whole job on the specialist.') : ''}
   ${card('Approved — ready to invoice', money0(ag.approvedNotBilled),
     ag.toBill.map(p => ptItem(p, `${ptTotals(p).done} units · approved ${rec(p.id).approvedAt?new Date(rec(p.id).approvedAt).toLocaleDateString():''}`,
       `<span style="font-weight:700;color:var(--txt)">${money0(ptTotals(p).total)}</span>`)).join('')
@@ -3446,7 +3524,7 @@ document.getElementById('ratein').onchange = e => {
    ============================================================ */
 function jobControlCard(){
   const counts = {}; PTS.forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
-  const notPrecon = PTS.filter(p => rec(p.id).status !== 'ready_precon').length;
+  const notPrecon = PTS.filter(p => rec(p.id).status !== 'new').length;
   const built = PTS.filter(p => ptTotals(p).total > 0).length;
   return `<div class="card"><h3><span class="grow">Job control</span>
     <span class="hint" style="text-transform:none;letter-spacing:0">${PTS.length} points</span></h3>
@@ -3454,21 +3532,21 @@ function jobControlCard(){
       <p class="hint">A new job starts with every point on the construction specialist to ride out. These two put it
         back there — use them when a job lands, or to clear the sample data out of the way.</p>
       <div style="height:10px"></div>
-      <button class="btn pri wide" onclick="dropToPrecon(true)">Fresh job — drop all ${PTS.length} points on the specialist</button>
+      <button class="btn pri wide" onclick="dropToPrecon(true)">Fresh job — hand all ${PTS.length} points to the specialist</button>
       <p class="hint" style="margin:6px 0 10px">Clears booked units, adders, T&amp;E, photos, crew assignments, suspense
-        answers, rate locks and every time log, then sets all ${PTS.length} points to Ready for pre-con.
+        answers, rate locks and every time log, then hands all ${PTS.length} points to the specialist as Not ridden out.
         ${built ? `<b>${built} point${built===1?'':'s'} currently have booked work that would be erased.</b>` : ''}</p>
       <button class="btn wide" onclick="dropToPrecon(false)">Statuses only — keep the booked work</button>
-      <p class="hint" style="margin:6px 0 0">Moves all ${notPrecon} point${notPrecon===1?'':'s'} to Ready for pre-con and
-        releases the rate locks, but leaves units, photos and time logs alone. Useful mid-job when the process was
-        started out of order.</p>
+      <p class="hint" style="margin:6px 0 0">Moves all ${notPrecon} point${notPrecon===1?'':'s'} back to the start of
+        pre-con and releases the rate locks, but leaves units, photos and time logs alone. Points that already have
+        before photos will re-release themselves straight away.</p>
     </div></div>`;
 }
 function dropToPrecon(clearWork){
   const n = PTS.length;
   const msg = clearWork
-    ? `Erase all booked units, adders, T&E, photos, crew assignments, suspense answers and time logs on all ${n} work points, and put every one of them on the specialist as Ready for pre-con?\n\nThis cannot be undone.`
-    : `Move all ${n} work points to Ready for pre-con and release the rate locks, keeping the booked work, photos and time logs?`;
+    ? `Erase all booked units, adders, T&E, photos, crew assignments, suspense answers and time logs on all ${n} work points, and hand every one of them to the specialist to ride out?\n\nThis cannot be undone.`
+    : `Send all ${n} work points back to the start of pre-con and release the rate locks, keeping the booked work, photos and time logs?`;
   if (!confirm(msg)) return;
   PTS.forEach(p => {
     if (clearWork) delete S.pts[p.id];
@@ -3480,15 +3558,255 @@ function dropToPrecon(clearWork){
       r.adders.forEach(a => a.locked = false);
       r.te.forEach(x => x.locked = false);
     }
-    r.status = 'ready_precon';
-    hist(p.id, clearWork ? 'Job reset — dropped on the specialist for pre-con'
-                         : 'Sent back to pre-con');
+    r.status = 'new';
+    hist(p.id, clearWork ? 'Job reset — handed to the specialist to ride out'
+                         : 'Sent back to the start of pre-con');
+    if (!clearWork) evalPrecon(p.id);
   });
   if (clearWork){ S.days = {}; DFRCREW = null; }
   S.settings.filter = 'all';
   applyRateOverrides();
   save(); drawPins(); renderAll();
-  toast(`All ${n} points are on the specialist — Ready for pre-con`, 'ok');
+  const still = PTS.filter(p => rec(p.id).status === 'new').length;
+  toast(`${still} of ${n} points are with the specialist to ride out`, 'ok');
+}
+
+/* ============================================================
+   ROUTING — order the work into a drive and hand it to the phone's
+   nav app. Used by the specialist to ride out pre-con, and by a
+   foreman to run his assigned poles.
+   ============================================================ */
+const MI = (a,b) => {                                  // straight-line miles
+  const R = 3958.8, dLat = (b.lat-a.lat)*Math.PI/180, dLng = (b.lng-a.lng)*Math.PI/180;
+  const la = a.lat*Math.PI/180, lb = b.lat*Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(la)*Math.cos(lb)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+};
+const mi = n => n < 0.1 ? Math.round(n*5280) + ' ft' : n.toFixed(1) + ' mi';
+
+const ROUTE_KINDS = {
+  precon:   { lbl:'To ride out',        who:['specialist','pm','office','gf'],
+              test:p => ['new','pending_suspense'].includes(rec(p.id).status) },
+  mine:     { lbl:"My crew's work",     who:['foreman','gf','pm'],
+              test:p => rec(p.id).crew === S.settings.crew &&
+                        ST[rec(p.id).status].step >= STEP_BUILD && ST[rec(p.id).status].step < STEP_LOCKED },
+  audit:    { lbl:'To audit',           who:['gf','pm'],
+              test:p => rec(p.id).status === 'ready_audit' },
+  filter:   { lbl:'Whatever is filtered', who:['specialist','foreman','gf','pm','office'],
+              test:p => matchFilter(p, S.settings.filter) }
+};
+
+/** greedy nearest-neighbour from a start point — on a pole line this walks the line */
+function buildRoute(kind, from){
+  const k = ROUTE_KINDS[kind]; if (!k) return [];
+  const pool = PTS.filter(p => k.test(p) && coord(p));
+  if (!pool.length) return [];
+  let cur = from;
+  if (!cur){                                            // no fix — start at the west end
+    const w = pool.reduce((a,b) => coord(b).lng < coord(a).lng ? b : a, pool[0]);
+    cur = coord(w);
+  }
+  const left = pool.slice(), out = [];
+  while (left.length){
+    let bi = 0, bd = Infinity;
+    left.forEach((p,i) => { const d = MI(cur, coord(p)); if (d < bd){ bd = d; bi = i; } });
+    const p = left.splice(bi,1)[0];
+    out.push(p.id); cur = coord(p);
+  }
+  return out;
+}
+function routeMiles(ids, from){
+  let m = 0, cur = from;
+  ids.forEach(id => { const c = coord(pt(id)); if (cur) m += MI(cur, c); cur = c; });
+  return m;
+}
+function route(){ return S.settings.route = S.settings.route || { kind:null, ids:[], done:[], from:null }; }
+function routeLeft(){ const R = route(); return R.ids.filter(id => !R.done.includes(id)); }
+
+function planRoute(kind){
+  const R = route();
+  const go2 = from => {
+    R.kind = kind; R.from = from || null;
+    R.ids = buildRoute(kind, from); R.done = [];
+    save(); drawPins(); renderAll();
+    if (!R.ids.length){ toast('Nothing to route in that list','bad'); return; }
+    toast(`${R.ids.length} stops · ${mi(routeMiles(R.ids, from))} of driving`, 'ok');
+    go('map'); fitRoute();
+  };
+  if (!navigator.geolocation){ go2(null); return; }
+  toast('Getting your position…');
+  navigator.geolocation.getCurrentPosition(
+    pos => go2({ lat:pos.coords.latitude, lng:pos.coords.longitude }),
+    ()  => { toast('No GPS fix — routing from the west end of the job'); go2(null); },
+    { enableHighAccuracy:true, timeout:8000 }
+  );
+}
+/** a point that releases itself out of "not ridden" is ticked off the route automatically */
+function routeAutoTick(id){
+  const R = S.settings.route;
+  if (!R || !R.ids || !R.ids.includes(id)) return;
+  if (!R.done.includes(id)) R.done.push(id);
+}
+function routeDone(id){
+  const R = route();
+  if (!R.done.includes(id)) R.done.push(id);
+  save(); drawPins(); renderAll();
+  const left = routeLeft();
+  toast(left.length ? `${left.length} stop${left.length===1?'':'s'} left` : 'Route finished', 'ok');
+}
+function routeUndo(id){
+  const R = route();
+  R.done = R.done.filter(x => x !== id);
+  save(); drawPins(); renderAll();
+}
+function routeClear(){
+  S.settings.route = { kind:null, ids:[], done:[], from:null };
+  save(); drawPins(); renderAll(); toast('Route cleared');
+}
+function routeReorderFromHere(){
+  const R = route();
+  if (!navigator.geolocation){ toast('No geolocation on this device','bad'); return; }
+  toast('Re-ordering from where you are…');
+  navigator.geolocation.getCurrentPosition(pos => {
+    const from = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+    const left = routeLeft();
+    let cur = from; const out = [];
+    const pool = left.slice();
+    while (pool.length){
+      let bi = 0, bd = Infinity;
+      pool.forEach((id,i) => { const d = MI(cur, coord(pt(id))); if (d < bd){ bd = d; bi = i; } });
+      const id = pool.splice(bi,1)[0]; out.push(id); cur = coord(pt(id));
+    }
+    R.ids = R.done.concat(out); R.from = from;
+    save(); drawPins(); renderAll(); fitRoute();
+    toast('Re-ordered from your position', 'ok');
+  }, () => toast('Could not get a fix','bad'), { enableHighAccuracy:true, timeout:8000 });
+}
+
+/* ---------- hand off to the phone's nav app ---------- */
+function navTo(id){
+  const c = coord(pt(id)); if (!c){ toast('That point has no position','bad'); return; }
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}&travelmode=driving`, '_blank');
+}
+/** Google Maps takes an origin, a destination and up to 9 waypoints in one link */
+let NAVLEGS = [], NAVFROM = null;
+function navRoute(){
+  const R = route(), left = routeLeft();
+  if (!left.length){ toast('No stops left','bad'); return; }
+  NAVFROM = R.from; NAVLEGS = [];
+  for (let i = 0; i < left.length; i += 10) NAVLEGS.push(left.slice(i, i+10));
+  if (NAVLEGS.length === 1){ navLeg(0); return; }
+  openSheet(`${left.length} stops — ${NAVLEGS.length} legs`,
+    `<p class="hint">Google Maps takes ten stops per link, so this route splits into ${NAVLEGS.length} legs.
+      Run them in order — each one opens in Maps with the stops already in it.</p><div style="height:10px"></div>` +
+    NAVLEGS.map((leg,i) => `<button class="btn wide" style="margin-bottom:8px" onclick="navLeg(${i})">
+      Leg ${i+1} — ${leg.length} stops, ${label(pt(leg[0]))} to ${label(pt(leg[leg.length-1]))}</button>`).join(''));
+}
+function navLeg(i){
+  const leg = NAVLEGS[i]; if (!leg) return;
+  const cs = leg.map(id => coord(pt(id))).filter(Boolean).map(c => `${c.lat},${c.lng}`);
+  if (!cs.length){ toast('No positions on that leg','bad'); return; }
+  const dest = cs.pop();
+  let org;
+  if (i === 0 && NAVFROM) org = `${NAVFROM.lat},${NAVFROM.lng}`;
+  else if (cs.length) org = cs.shift();
+  else org = dest;
+  const wp = cs.length ? '&waypoints=' + cs.join('|') : '';
+  closeSheet();
+  window.open(`https://www.google.com/maps/dir/?api=1&origin=${org}&destination=${dest}${wp}&travelmode=driving`, '_blank');
+}
+
+/* ---------- map layer ---------- */
+let ROUTELINE = null, ROUTEDOTS = [];
+function drawRoute(){
+  if (!MAP) return;
+  if (ROUTELINE){ MAP.removeLayer(ROUTELINE); ROUTELINE = null; }
+  ROUTEDOTS.forEach(m => MAP.removeLayer(m)); ROUTEDOTS = [];
+  const R = route(); if (!R.ids.length) return;
+  const pts = [];
+  if (R.from) pts.push([R.from.lat, R.from.lng]);
+  R.ids.forEach(id => { const c = coord(pt(id)); if (c) pts.push([c.lat, c.lng]); });
+  if (pts.length < 2) return;
+  ROUTELINE = L.polyline(pts, { color:'#eab308', weight:3, opacity:.85, dashArray:'7 5' }).addTo(MAP);
+  R.ids.forEach((id,i) => {
+    const c = coord(pt(id)); if (!c) return;
+    const done = R.done.includes(id);
+    ROUTEDOTS.push(L.marker([c.lat,c.lng], { zIndexOffset:900, icon:L.divIcon({
+      className:'', iconSize:[18,18], iconAnchor:[-8,26],
+      html:`<b class="routeN${done?' done':''}">${done?'✓':i+1}</b>` }) }).addTo(MAP));
+  });
+}
+function fitRoute(){
+  const R = route(); if (!MAP || !R.ids.length) return;
+  const cs = R.ids.map(id => coord(pt(id))).filter(Boolean).map(c => [c.lat,c.lng]);
+  if (R.from) cs.push([R.from.lat, R.from.lng]);
+  if (cs.length) MAP.fitBounds(L.latLngBounds(cs).pad(0.18));
+}
+
+/* ---------- the card, shown on the relevant home screens ---------- */
+function routeCard(defaultKind){
+  const R = route(), left = routeLeft(), rl = role();
+  const kinds = Object.keys(ROUTE_KINDS).filter(k => ROUTE_KINDS[k].who.includes(rl));
+  if (!R.ids.length){
+    const n = ROUTE_KINDS[defaultKind] ? PTS.filter(p => ROUTE_KINDS[defaultKind].test(p) && coord(p)).length : 0;
+    return `<div class="card"><h3><span class="grow">Ride-out route</span></h3><div class="body">
+      <p class="hint">Orders the work into a drive, nearest first from where you are, and hands it to Google Maps.
+        On a pole line that walks the line in order. Stops tick themselves off as each point releases out of
+        Not ridden out, so the list and the map stay honest without extra taps.</p>
+      <div style="height:10px"></div>
+      <button class="btn pri wide" onclick="planRoute('${defaultKind}')">
+        Plan a route — ${n} point${n===1?'':'s'} ${ROUTE_KINDS[defaultKind].lbl.toLowerCase()}</button>
+      ${(() => { const no = PTS.filter(p => ROUTE_KINDS[defaultKind].test(p) && !coord(p)).length;
+        return no ? `<p class="hint" style="margin-top:8px;color:var(--warn)">${no} more have no position on the print,
+          so they cannot be routed. Drop a pin on them from the map as you come across them, or import a KMZ from TECO.</p>` : ''; })()}
+      ${kinds.filter(k => k !== defaultKind).length ? `<div class="chipbar" style="margin-top:10px">
+        ${kinds.filter(k => k !== defaultKind).map(k => `<button class="chip" onclick="planRoute('${k}')">${ROUTE_KINDS[k].lbl}</button>`).join('')}
+      </div>` : ''}
+    </div></div>`;
+  }
+  const next = left[0];
+  const from = R.from;
+  return `<div class="card"><h3><span class="grow">Ride-out route</span>
+    <span class="hint" style="text-transform:none;letter-spacing:0">${R.done.length}/${R.ids.length} done</span></h3>
+    <div class="body">
+      ${next ? `<div class="hint" style="letter-spacing:.06em;text-transform:uppercase">Next stop</div>
+        <div style="font-size:18px;font-weight:800;line-height:1.2">${fullLabel(pt(next))}</div>
+        <div class="hint">${from ? mi(MI(from, coord(pt(next)))) + ' from your start · ' : ''}${
+          left.length} stop${left.length===1?'':'s'} left · ${mi(routeMiles(left, from))} to go</div>
+        <div class="hint" style="margin-top:4px">needs ${preconNeeds(next).length
+          ? preconNeeds(next).map(x => x.split(' — ')[0]).join(', ') : 'nothing — it should have released itself'}</div>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn pri" onclick="navTo('${next}')">Navigate</button>
+          <button class="btn" onclick="go('point','${next}')">Open the point</button>
+          <button class="btn" onclick="routeDone('${next}')">Skip</button>
+        </div>
+        <button class="btn wide" style="margin-top:8px" onclick="navRoute()">Send all ${left.length} stops to Google Maps</button>`
+      : `<p class="hint">Every stop is ticked off. ${R.ids.length} point${R.ids.length===1?'':'s'} ridden.</p>`}
+      <div class="bar" style="margin-top:10px"><i style="width:${Math.round(100*R.done.length/R.ids.length)}%;background:#eab308"></i></div>
+    </div>
+    <div class="body tight">${R.ids.map((id,i) => {
+      const p = pt(id), done = R.done.includes(id), open = suspOpen(id).length;
+      return `<div class="itm" style="opacity:${done?.55:1}">
+        <b style="width:20px;text-align:center;color:${done?'var(--ok)':'#eab308'};font-size:13px">${done?'✓':i+1}</b>
+        <div class="col" onclick="go('point','${id}')" style="cursor:pointer">
+          <div class="t" style="font-size:13px">${p.sec} Pt ${p.pt} <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+          <div class="s">${ST[rec(id).status].short}${
+            preconNeeds(id).length ? ' · needs ' + preconNeeds(id).map(x => x.split(' — ')[0]).join(', ') : ' · clear'}${
+            i ? ' · ' + mi(MI(coord(pt(R.ids[i-1])), coord(p))) + ' from last' : ''}</div></div>
+        <div class="r">${done
+          ? `<span class="st" style="background:${ST[rec(id).status].col}22;color:${ST[rec(id).status].ink}">${ST[rec(id).status].short}</span>`
+          : `<button class="btn sm" onclick="navTo('${id}')">Nav</button>`}</div></div>`; }).join('')}</div>
+    <div class="body"><div class="btnrow">
+      <button class="btn" onclick="go('map');fitRoute()">Show on map</button>
+      <button class="btn" onclick="routeReorderFromHere()">Re-order from here</button>
+      <button class="btn bad" onclick="routeClear()">Clear</button>
+    </div>
+    <p class="hint" style="margin-top:8px">Distances are straight-line, so the real drive is longer — Google Maps has
+      the roads. Re-order from here if you get pulled off the job and come back at a different end.${
+      (() => { const k = ROUTE_KINDS[route().kind];
+        const no = k ? PTS.filter(p => k.test(p) && !coord(p)).length : 0;
+        return no ? ` <b style="color:var(--warn)">${no} point${no===1?'':'s'} in this list have no position and are not in the route.</b>` : ''; })()}</p>
+    </div></div>`;
 }
 
 /* ============================================================
@@ -3734,10 +4052,17 @@ function renderSet(){
       : '<b>This viewer blocks local storage</b> — entries live in memory only. Export before you close the tab, or open the downloaded HTML file directly in Safari or Chrome.'}</p>
   </div></div>
 
-  <div class="card"><h3>About this build</h3><div class="body">
-    <p class="hint">Prototype — everything is on this device. No login, no server, no live sync between phones yet;
-      the sync chip simulates the queue so the flow reads true. The architecture spec that ships with this file
-      covers what the production version needs.</p>
+  <div class="card"><h3><span class="grow">About this build</span>
+    <span class="mono hint" style="text-transform:none;letter-spacing:0">${typeof BUILD_ID !== 'undefined' ? BUILD_ID : '—'}</span></h3>
+    <div class="body">
+    <p class="hint">Build <b class="mono">${typeof BUILD_ID !== 'undefined' ? BUILD_ID : 'unknown'}</b>${
+      (typeof DEMO_BUILD !== 'undefined' && DEMO_BUILD) ? ' · <b style="color:var(--warn)">demo rates</b>' : ''}.
+      The id is a fingerprint of the app code — two copies showing the same id are the same app. If you have this
+      hosted somewhere, check this line on the phone against the newest file to see whether the link is current;
+      nothing updates a hosted copy automatically, the file has to be replaced.</p>
+    <p class="hint" style="margin-top:8px">Prototype — everything is on this device. No login, no server, no live sync
+      between phones yet; the sync chip simulates the queue so the flow reads true. The architecture spec that ships
+      with this file covers what the production version needs.</p>
   </div></div>
   <div style="height:14px"></div>`;
 }
@@ -4009,23 +4334,31 @@ function seedDemo(){
   Object.keys(ASSIGN).forEach(wo => front.push(...queue[wo].splice(0, 14)));
   front.forEach((p, i) => {
     const r = rec(p.id), m = i % 7;
-    if (m === 0 || m === 1){ r.status = 'new'; }
-    else if (m === 2 || m === 3){ r.status = 'ready_precon'; }
-    else if (m === 4){                                        // waiting on locates
-      r.status = 'pending_suspense';
-      fillSusp(p, { loc:true, mot:false, sw:false, d1:yday, locBack:false });
+    if (m === 0 || m === 1 || m === 2){
+      r.status = 'new';                                        // not ridden out — no before photos
     }
-    else if (m === 5){                                        // clear, waiting on a crew
-      r.status = 'ready_construction';
+    else if (m === 3){                                         // ridden, waiting on locates
+      addShots(p, 'before', 5, yday);
+      fillSusp(p, { loc:true, mot:false, sw:false, d1:yday, locBack:false });
+      addShots(p, 'briefing', 1, yday);
+    }
+    else if (m === 4){                                         // ridden, switching order on order
+      addShots(p, 'before', 5, yday);
+      fillSusp(p, { loc:false, mot:true, sw:true, d1:yday, swNum:false });
+    }
+    else if (m === 5){                                         // ridden and clear
+      addShots(p, 'before', 5, yday);
       fillSusp(p, { loc:true, mot:true, sw:true, d1:yday, d2:d0 });
       addShots(p, 'locate', 1, yday);
     }
     else {                                                     // assigned, not started
-      r.status = 'assigned';
+      addShots(p, 'before', 5, yday);
+      fillSusp(p, { loc:false, mot:false, sw:true, d1:yday });
       r.crew = S.crews[i % S.crews.length]; r.assignedAt = new Date().toISOString();
-      fillSusp(p, { loc:false, mot:false, sw:true, d1:yday, swNum:false });
     }
     hist(p.id, 'Sample data seeded');
+    if (m > 2 && m < 6) evalPrecon(p.id);                      // let the rule place it
+    else if (m === 6) r.status = 'assigned';
   });
 
   S.settings.crew = '412'; S.settings.foreman = FOREMAN['412'];
