@@ -894,6 +894,12 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .ph.add svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
 .ph.add span{font-size:9.5px;margin-top:3px}
 
+.backbtn{
+  display:inline-flex;align-items:center;gap:4px;min-height:38px;padding:0 12px 0 8px;margin-bottom:10px;
+  font-size:13px;font-weight:600;color:var(--dim);
+}
+.backbtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
 /* ---------- daily target meter ---------- */
 .meter{height:12px;border-radius:6px;background:var(--bg3);overflow:hidden;border:1px solid var(--line)}
 .meter i{display:block;height:100%;border-radius:6px 0 0 6px;background:linear-gradient(90deg,#166534,#22c55e);
@@ -990,7 +996,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.9a96cd-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.2b6414-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1161,7 +1167,7 @@ const SUSP = [
   { k:'locates',   lbl:'Locates',        q:'Does this point need locates?',
     fields:[ {f:'ticket', lbl:'Ticket #'}, {f:'submitted', lbl:'Submitted', type:'date'},
              {f:'received', lbl:'Response received', type:'date'} ],
-    required:['submitted','received'] },
+    required:['submitted','received'], photo:'locate' },
   { k:'mot',       lbl:'MOT',            q:'Does this point need MOT?',
     fields:[ {f:'plan', lbl:'MOT plan / permit #'}, {f:'confirmed', lbl:'Confirmed', type:'date'} ],
     required:['confirmed'] },
@@ -1181,13 +1187,36 @@ function suspOpen(id){
   SUSP.forEach(s => {
     const v = sp[s.k];
     if (v.needed == null) out.push({ item:s, why:'not answered' });
-    else if (v.needed) s.required.forEach(f => {
-      if (!String(v[f] || '').trim())
-        out.push({ item:s, why:(s.fields.find(x => x.f === f) || {}).lbl + ' missing' });
-    });
+    else if (v.needed){
+      s.required.forEach(f => {
+        if (!String(v[f] || '').trim())
+          out.push({ item:s, why:(s.fields.find(x => x.f === f) || {}).lbl + ' missing' });
+      });
+      // the positive response itself, attached by the specialist — not the crew's job
+      if (s.photo && !photosOf(id, s.photo).length)
+        out.push({ item:s, why:'positive response not attached' });
+    }
   });
   return out;
 }
+
+/* ---------- field notes: a log, not one box anyone can overwrite ---------- */
+const NOTE_MAX = 500;
+function noteLog(id){ const r = rec(id); return r.notes2 = r.notes2 || []; }
+function addNote(id, text){
+  const t = String(text || '').trim().slice(0, NOTE_MAX);
+  if (!t) return false;
+  noteLog(id).push({ ts:new Date().toISOString(), who:role(), name:S.settings.foreman || '', text:t });
+  hist(id, 'Field note added');
+  save();
+  return true;
+}
+function delNote(id, i){
+  const l = noteLog(id);
+  if (!confirm('Delete this note?')) return;
+  l.splice(i,1); hist(id,'Field note deleted'); save(); renderPoint(id);
+}
+function canNote(){ return ['foreman','gf','specialist','pm'].includes(role()); }
 function suspDone(id){ return suspOpen(id).length === 0; }
 
 /* ---------- the pre-con rule ----------
@@ -1235,7 +1264,7 @@ const PHOTO = [
   { k:'briefing',  lbl:'Pre-job briefing',  min:1, when:'audit',  hint:'Signed tailboard / JSA' },
   { k:'switching', lbl:'Switching order',   min:1, when:'audit',  hint:'Required when a switching order was issued',
     only:id => susp(id).switching.needed === true },
-  { k:'locate',    lbl:'Locate response',   min:1, when:'audit',  hint:'The marked-up response sheet — it arrives after the ride-out',
+  { k:'locate',    lbl:'Locate response',   min:1, when:'susp',   hint:'The positive response — the specialist attaches it when it comes back',
     only:id => susp(id).locates.needed === true }
 ];
 /** photo kinds that actually apply to this point */
@@ -1515,8 +1544,12 @@ function notify(title, body){
 }
 
 /* ---------- navigation ---------- */
-let CUR = null;
+let CUR = null, BACKTO = null;
 function go(v, arg){
+  if (v === 'point'){
+    const cur = document.querySelector('.view.active');
+    if (cur && cur.id !== 'v-point') BACKTO = cur.id.replace('v-','');
+  }
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.id === 'v-'+v));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
   if (v === 'list') renderList();
@@ -1851,6 +1884,8 @@ function renderPoint(id){
   const can = canEditUnits(id), c = coord(p);
   const short = photoShort(id), sOpen = suspOpen(id);
   document.getElementById('ptbody').innerHTML = `
+  <button class="btn backbtn" onclick="goBack()">
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>${BACKTO==='home'?'Home':BACKTO==='map'?'Map':BACKTO==='qa'?'QA/QC':'Points'}</button>
   <div class="card">
     <h3><span class="grow">WO ${p.wo} · ${p.sec} Pt ${p.pt}</span>
         <span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} · ${st.lbl}</span></h3>
@@ -1911,12 +1946,25 @@ function renderPoint(id){
     <div class="body">${PHOTO.map(k => photoSection(id,k)).join('<hr>')}</div>
   </div>
 
-  <div class="card">
-    <h3>Field notes</h3>
-    <div class="body">
-      <textarea rows="3" ${can?'':'disabled'} placeholder="Conditions, delays, what the crew found that the print missed…"
-        oninput="rec('${id}').notes=this.value;save()">${esc(r.notes)}</textarea>
-    </div>
+  <div class="card" id="c-notes">
+    <h3><span class="grow">Field notes</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">${noteLog(id).length||''}</span></h3>
+    <div class="body tight">${noteLog(id).map((nt,i) => `<div class="itm">
+      <div class="col"><div class="s">${new Date(nt.ts).toLocaleString()} · ${ROLE_LBL[nt.who]||nt.who}${nt.name?` (${esc(nt.name)})`:''}</div>
+        <div style="font-size:13.5px;white-space:pre-wrap">${esc(nt.text)}</div></div>
+      ${nt.who === role() ? `<div class="r"><button class="btn sm bad" onclick="delNote('${id}',${i})">×</button></div>` : ''}
+    </div>`).join('') || '<div class="empty">No notes yet</div>'}</div>
+    ${canNote() ? `<div class="body">
+      <textarea id="notebox" rows="3" maxlength="${NOTE_MAX}" placeholder="Conditions, delays, what you found that the print missed…"
+        oninput="document.getElementById('notecount').textContent=(${NOTE_MAX}-this.value.length)+' left'"></textarea>
+      <div class="row" style="margin-top:6px">
+        <span class="hint" id="notecount">${NOTE_MAX} left</span>
+        <button class="btn col" style="max-width:130px;margin-left:auto" onclick="postNote('${id}')">Add note</button>
+      </div>
+      <p class="hint" style="margin-top:6px">${NOTE_MAX} characters. Notes are stamped with who wrote them and print on
+        the asbuilt — anyone from the specialist to the GF can add one, nobody can overwrite somebody else's.</p>
+    </div>` : ''}
+    ${r.notes ? `<div class="body"><p class="hint">Earlier note: ${esc(r.notes)}</p></div>` : ''}
   </div>
 
   ${statusCard(p,r)}
@@ -1956,9 +2004,15 @@ function actionBar(p, r){
   if ((r.status === 'assigned' || r.status === 'in_progress' || r.status === 'correction')
       && (rl === 'foreman' || rl === 'pm' || rl === 'gf')){
     const n = auditBlockers(id).length;
-    B.push(`<button class="btn big" onclick="saveProgress('${id}')">Save progress</button>`);
+    const D = dayRec(today(), r.crew || DFRCREW), v = openVisit(D);
+    if (v && v.ptId === id)
+      B.push(`<button class="btn qa big" onclick="departSheet('${v.id}')">Clock off · ${fmtDur(visitMins(v))}</button>`);
+    else
+      B.push(`<button class="btn pri big" onclick="arriveHere('${id}')">Arrived</button>`);
+    if (r.status !== 'assigned')
+      B.push(`<button class="btn big" onclick="saveProgress('${id}')">Save</button>`);
     B.push(`<button class="btn ${n?'':'ok'} big" onclick="submitAudit('${id}')">
-      Complete${n?` · ${n} left`:' → audit'}</button>`);
+      Complete${n?` · ${n}`:''}</button>`);
   }
   if (r.status === 'ready_audit' && (rl === 'gf' || rl === 'pm')){
     B.push(`<button class="btn bad big" onclick="auditFail('${id}')">Correction</button>`);
@@ -1977,6 +2031,15 @@ function actionBar(p, r){
   return `<div class="btnrow">${B.join('')}</div>`;
 }
 /** a foreman picking up ready work himself, no office round-trip */
+/** Arrived, from the job card. Acknowledges the assignment and starts the on-site clock. */
+function arriveHere(id){
+  if (!pt(id)) return;
+  const r = rec(id);
+  if (!r.ackAt){ r.ackAt = new Date().toISOString(); hist(id, 'Assignment acknowledged'); }
+  DFRCREW = r.crew || DFRCREW || S.settings.crew;
+  arrive(id);
+  renderPoint(id);
+}
 function claimPoint(id){
   const r = rec(id), crew = S.settings.crew || S.crews[0];
   r.crew = crew; r.assignedAt = new Date().toISOString(); r.status = 'assigned';
@@ -2080,6 +2143,10 @@ function setSusp(id, k, f, v){
   const moved = evalPrecon(id);
   save(); renderPoint(id); drawPins();
   if (moved) toast(fullLabel(pt(id)) + ' → ' + ST[rec(id).status].lbl, 'ok');
+  // the response date is worth nothing without the response itself
+  const spec = SUSP.find(s => s.k === k);
+  if (spec && spec.photo && f === spec.required[spec.required.length-1] && String(v||'').trim()
+      && !photosOf(id, spec.photo).length) askForResponse(id, spec);
 }
 
 /* ---------- photos by kind ---------- */
@@ -2201,6 +2268,25 @@ function setUState(id,seq,s){
   }
   touch(id); save(); renderPoint(id); drawPins();
 }
+/** the positive response prompt — fires when the received date goes in */
+function askForResponse(id, spec){
+  const k = PHOTO.find(x => x.k === spec.photo) || { lbl:'response' };
+  openSheet('Attach the ' + k.lbl.toLowerCase(), `
+    <p class="hint">The date is in. Now the sheet itself — photograph the marked-up response, or pick the PDF
+      screenshot off your phone. This point cannot go to construction without it, and the crew should never have to
+      chase it.</p>
+    <div style="height:12px"></div>
+    <button class="btn pri wide" onclick="closeSheet();addPhoto('${id}','${spec.photo}')">Take or attach the ${k.lbl.toLowerCase()}</button>
+    <div style="height:8px"></div>
+    <button class="btn wide" onclick="closeSheet()">Not on me right now</button>
+    <p class="hint" style="margin-top:8px">It stays on the outstanding list until it is attached.</p>`);
+}
+function postNote(id){
+  const box = document.getElementById('notebox');
+  if (!box || !addNote(id, box.value)){ toast('Nothing to add','bad'); return; }
+  renderPoint(id); toast('Note added','ok');
+}
+function goBack(){ go(BACKTO || 'list'); }
 function setCrew(id,v){
   const r = rec(id); r.crew = v || null;
   hist(id, v ? 'Assigned to crew '+v : 'Crew assignment cleared'); save(); renderPoint(id);
@@ -2519,7 +2605,53 @@ function auditFail(id){
 /* ============================================================
    LIST
    ============================================================ */
+/** one row in the points-tab format — the same everywhere so it reads the same everywhere */
+function pointRow(p, o){
+  o = o || {};
+  const r = rec(p.id), x = ptTotals(p), st = ST[r.status], needs = o.needs === false ? [] : pointNeeds(p.id);
+  const onSite = openVisit(dayRec(today(), r.crew || DFRCREW)) || null;
+  const here = onSite && onSite.ptId === p.id;
+  return `<button class="itm" onclick="go('point','${p.id}')">
+    <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
+    <div class="col">
+      <div class="t">${o.wo!==false?p.wo+' · ':''}${p.sec} Pt ${p.pt}
+        <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+      <div class="s">${st.short}${o.crew!==false&&r.crew?` · crew ${esc(r.crew)}`:''} · ${x.done}/${x.planned} units${
+        r.adders.length?` · +${r.adders.length} added`:''}${
+        canSeeMoney()&&x.total?` · ${money0(x.total)}`:''}${
+        ptMins(p.id)?` · ${fmtDur(ptMins(p.id))} on site`:''}</div>
+      ${here?`<div class="s" style="color:${ST.in_progress.ink}">on site now — ${fmtDur(visitMins(onSite))}</div>`:''}
+      ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
+      <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
+    </div>
+    <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span></div>
+  </button>`;
+}
+
 /** the Points tab is one job by default; anyone above a crew can widen it to both */
+/** one row in the points-tab format — the same everywhere so it reads the same everywhere */
+function pointRow(p, o){
+  o = o || {};
+  const r = rec(p.id), x = ptTotals(p), st = ST[r.status], needs = o.needs === false ? [] : pointNeeds(p.id);
+  const onSite = openVisit(dayRec(today(), r.crew || DFRCREW)) || null;
+  const here = onSite && onSite.ptId === p.id;
+  return `<button class="itm" onclick="go('point','${p.id}')">
+    <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
+    <div class="col">
+      <div class="t">${o.wo!==false?p.wo+' · ':''}${p.sec} Pt ${p.pt}
+        <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
+      <div class="s">${st.short}${o.crew!==false&&r.crew?` · crew ${esc(r.crew)}`:''} · ${x.done}/${x.planned} units${
+        r.adders.length?` · +${r.adders.length} added`:''}${
+        canSeeMoney()&&x.total?` · ${money0(x.total)}`:''}${
+        ptMins(p.id)?` · ${fmtDur(ptMins(p.id))} on site`:''}</div>
+      ${here?`<div class="s" style="color:${ST.in_progress.ink}">on site now — ${fmtDur(visitMins(onSite))}</div>`:''}
+      ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
+      <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
+    </div>
+    <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span></div>
+  </button>`;
+}
+
 /** the Points tab is one job by default; anyone above a crew can widen it to both */
 function listPool(){
   return (S.settings.allWO && role() !== 'foreman') ? PTS.slice() : jobPts();
@@ -2551,21 +2683,8 @@ function renderList(){
       ST[k]?`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>`:''}${l}</button>`).join('');
 
   const list = pool.filter(p => matchFilter(p, S.settings.filter));
-  document.getElementById('ptlist').innerHTML = list.map(p => {
-    const r = rec(p.id), x = ptTotals(p), st = ST[r.status], needs = pointNeeds(p.id);
-    return `<button class="itm" onclick="go('point','${p.id}')">
-      <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
-      <div class="col">
-        <div class="t">${both?p.wo+' · ':''}${p.sec} Pt ${p.pt} <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
-        <div class="s">${st.short}${r.crew?` · crew ${esc(r.crew)}`:''} · ${x.done}/${x.planned} units${
-          r.adders.length?` · +${r.adders.length} added`:''}${r.photos.length?` · ${r.photos.length} photos`:''}</div>
-        ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
-        <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
-      </div>
-      <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span><br>
-        <span style="font-size:13px;color:var(--txt);font-weight:700">${canSeeMoney()&&x.total?money0(x.total):''}</span></div>
-    </button>`;
-  }).join('') || '<div class="empty">Nothing matches this filter</div>';
+  document.getElementById('ptlist').innerHTML =
+    list.map(p => pointRow(p, { wo:both })).join('') || '<div class="empty">Nothing matches this filter</div>';
 }
 function renderQA(){
   const g = st => PTS.filter(p => rec(p.id).status === st);
@@ -2622,7 +2741,7 @@ function fmtDur(m){
 }
 const clock = ts => ts ? new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '—';
 function visitMins(v){ return v.out ? MIN(v.in, v.out) : MIN(v.in, new Date().toISOString()); }
-function openVisit(D){ return D.visits.find(v => !v.out) || null; }
+function openVisit(D){ return D.visits.find(v => !v.out && pt(v.ptId)) || null; }
 function dayMins(D){
   if (!D.startedAt) return 0;
   return MIN(D.startedAt, D.endedAt || new Date().toISOString());
@@ -2683,6 +2802,7 @@ function fillRosterHours(D){
 
 /* ---------- per-point arrive / depart ---------- */
 function arrive(ptId){
+  if (!pt(ptId)){ toast('That work point does not exist','bad'); return; }
   const D = dayRec(DFRDATE);
   if (!D.startedAt) startDay();
   const cur = openVisit(D);
@@ -2826,7 +2946,7 @@ function renderTime(){
 
   ${D.visits.length ? `<div class="card"><h3><span class="grow">Today's log</span>
     <span class="hint" style="text-transform:none;letter-spacing:0">${fmtDur(site)}</span></h3>
-    <div class="body tight">${D.visits.slice().reverse().map(v => `<div class="itm">
+    <div class="body tight">${D.visits.filter(v => pt(v.ptId)).slice().reverse().map(v => `<div class="itm">
       <div class="col"><div class="t" style="font-size:13px">${fullLabel(pt(v.ptId))}</div>
         <div class="s">${clock(v.in)} → ${v.out?clock(v.out):'<b style="color:'+ST.in_progress.ink+'">on site</b>'}${
           v.note?' · '+v.note:''}</div></div>
@@ -3371,205 +3491,169 @@ function specialistHome(){
   <div style="height:14px"></div>`;
 }
 
+/* ---------------- shared: chips + one list ---------------- */
+let HOMEV = {};
+function homeView(role2, def){ return HOMEV[role2] || def; }
+function setHomeView(role2, v){ HOMEV[role2] = v; renderHome(); }
+function homeChips(role2, sets, cur){
+  return `<div class="chipbar" style="margin-bottom:10px">${sets.map(s =>
+    `<button class="chip ${cur===s.k?'sel':''}" onclick="setHomeView('${role2}','${s.k}')"
+      style="${cur===s.k&&s.col?`background:${s.col};border-color:${s.col};color:#0b0e12`:''}">${s.lbl}${
+      s.n!=null?` ${s.n}`:''}</button>`).join('')}</div>`;
+}
+function homeList(list, empty, opts){
+  return `<div class="card"><div class="body tight">${
+    list.map(p => pointRow(p, opts||{})).join('') || `<div class="empty">${empty}</div>`}</div></div>`;
+}
+
 /* ---------------- FOREMAN ---------------- */
 function foremanHome(){
-  const my = S.settings.crew;
-  const mine = PTS.filter(p => crewOf(p) === my);
-  const td = today();
-  const todayPts = mine.filter(p => rec(p.id).dates.includes(td));
-  const unitsToday = todayPts.reduce((s,p) => {
-    const r = rec(p.id); return s + p.units.filter(u => r.units[u.seq] && r.units[u.seq].date === td && r.units[u.seq].state === 'complete').length;
-  }, 0);
-  const back = mine.filter(p => rec(p.id).status === 'correction');
-  const waiting = mine.filter(p => rec(p.id).status === 'ready_audit');
-  const fresh = mine.filter(p => rec(p.id).status === 'assigned');
-  const ready = mine.filter(p => rec(p.id).status === 'in_progress');
-  const noPhoto = mine.filter(p => { const r = rec(p.id), t = ptTotals(p);
-    return (r.status === 'in_progress' || r.status === 'correction') && (t.done || t.part)
-           && !r.photos.some(x => x.phase === 'after'); });
-
+  const my = S.settings.crew, td = today();
+  const mine = PTS.filter(p => crewOf(p) === my && ST[rec(p.id).status].step < STEP_LOCKED);
+  const D = dayRec(td, my), v = openVisit(D);
+  const g = f => mine.filter(f);
+  const corr   = g(p => rec(p.id).status === 'correction');
+  const assign = g(p => rec(p.id).status === 'assigned');
+  const build  = g(p => rec(p.id).status === 'in_progress');
+  const audit  = g(p => rec(p.id).status === 'ready_audit');
+  const short  = g(p => ST[rec(p.id).status].step >= STEP_BUILD && photoShort(p.id).length);
+  const sets = [
+    { k:'all',    lbl:'Everything', n:mine.length },
+    { k:'corr',   lbl:'Correction', n:corr.length || null, col:corr.length?ST.correction.col:null },
+    { k:'assign', lbl:'New on me',  n:assign.length || null },
+    { k:'build',  lbl:'Building',   n:build.length || null },
+    { k:'short',  lbl:'Photos short', n:short.length || null },
+    { k:'audit',  lbl:'With the GF', n:audit.length || null }
+  ].filter(s => s.k === 'all' || s.n);
+  const cur = homeView('foreman','all');
+  const pick = { all:mine, corr, assign, build, short, audit }[cur] || mine;
+  const order = { correction:0, in_progress:1, assigned:2, ready_audit:3 };
+  const list = pick.slice().sort((x,y) =>
+    (order[rec(x.id).status] ?? 9) - (order[rec(y.id).status] ?? 9) ||
+    x.sec.localeCompare(y.sec) || String(x.pt).localeCompare(String(y.pt), undefined, { numeric:true }));
+  const unitsToday = mine.reduce((s,p) => { const r = rec(p.id);
+    return s + pt(p.id).units.filter(u => r.units[u.seq] && r.units[u.seq].date === td && r.units[u.seq].state === 'complete').length; }, 0);
   return `
   <div class="card"><div class="body">
-    <div class="hint">${greet()}${S.settings.foreman?', '+esc(S.settings.foreman):''} · crew ${esc(my||'—')} · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
-    <div style="font-size:26px;font-weight:800;line-height:1.15;margin-top:3px">${unitsToday} unit${unitsToday===1?'':'s'} today</div>
-    <div class="hint">across ${todayPts.length} work point${todayPts.length===1?'':'s'}</div>
+    <div class="row">
+      <div class="col">
+        <div class="hint">${greet()}${S.settings.foreman?', '+esc(S.settings.foreman):''} · crew ${esc(my||'—')}</div>
+        <div style="font-size:22px;font-weight:800;line-height:1.2">${mine.length} point${mine.length===1?'':'s'} on you</div>
+        <div class="hint">${unitsToday} unit${unitsToday===1?'':'s'} today${
+          D.startedAt && !D.endedAt ? ` · ${fmtDur(dayMins(D))} on the clock` : ''}</div>
+      </div>
+      <button class="btn" onclick="go('dfr')">Time</button>
+    </div>
+    ${v ? `<div class="card" style="margin:10px 0 0;border-color:${ST.in_progress.col}"><div class="body"><div class="row">
+      <div class="col"><div class="hint">On site now</div>
+        <div style="font-weight:700">${fullLabel(pt(v.ptId))}</div>
+        <div class="hint">${clock(v.in)} · ${fmtDur(visitMins(v))}</div></div>
+      <button class="btn qa" onclick="departSheet('${v.id}')">Clock off</button></div></div></div>` : ''}
   </div></div>
 
-  <div class="tiles">
-    <div class="tile"><b style="color:${fresh.length?ST.assigned.ink:'inherit'}">${fresh.length}</b><span>new on you</span></div>
-    <div class="tile"><b style="color:${back.length?ST.correction.ink:'inherit'}">${back.length}</b><span>correction</span></div>
-    <div class="tile"><b>${ready.length}</b><span>in progress</span></div>
-    <div class="tile"><b style="color:${noPhoto.length?'#fbbf24':'inherit'}">${noPhoto.length}</b><span>photos short</span></div>
-  </div>
-  <div style="height:10px"></div>
-
-  ${(() => { const up = PTS.filter(p => rec(p.id).status === 'ready_construction');
-     return up.length ? `<div class="card" style="border-color:${ST.ready_construction.col}">
-       <h3><span class="grow">Ready to build — not assigned</span>
-         <span class="st" style="background:${ST.ready_construction.col}22;color:${ST.ready_construction.ink}">${up.length}</span></h3>
-       <div class="body tight">${up.slice(0,8).map(p => ptItem(p, `${ptTotals(p).planned} planned units · cleared by the specialist`,
-         `<button class="btn sm pri" onclick="event.stopPropagation();claimPoint('${p.id}')">Take it</button>`)).join('')}
-         ${up.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${up.length-8} more</div></div></div>` : ''}</div>
-       <div class="body"><p class="hint">The office normally assigns these. If you are standing there, take it —
-         it goes on your crew and the assignment is logged.</p></div></div>` : ''; })()}
-
-  ${(() => { const carry = mine.filter(p => rec(p.id).status === 'in_progress' && lastProgress(p.id));
-     return carry.length ? card('Pick up where you left off', carry.length,
-       carry.map(p => { const lp = lastProgress(p.id), t = ptTotals(p);
-         return ptItem(p, `${lp.date} · ${t.done} of ${t.planned} units${lp.note?` · “${esc(lp.note)}”`:''}`); }).join(''),
-       'Saved by whoever worked it last. The units already booked stay booked — today adds to them.') : ''; })()}
-
-  ${routeCard('mine')}
-
-  ${fresh.length ? card('Just dropped on you', fresh.length,
-      fresh.map(p => ptItem(p, `${ptTotals(p).planned} planned units${
-        susp(p.id).switching.needed===true?' · switching order '+(esc(susp(p.id).switching.number)||'to be entered'):''}`)).join(''),
-      'Assigned by the office and not started. Open one and start booking units.') : ''}
-
-  ${back.length ? card('Immediate correction required — do these first', back.length,
-      back.map(p => ptItem(p, (rec(p.id).qa && rec(p.id).qa.note) ? '“'+esc(rec(p.id).qa.note)+'”' : 'Returned by the GF')).join(''),
-      'Fix what the GF called out, add a photo if that was the problem, and submit again.') : ''}
-
-  ${noPhoto.length ? card('No after photo yet', noPhoto.length,
-      noPhoto.map(p => { const t = ptTotals(p); return ptItem(p, `${t.done} of ${t.planned} units complete`,
-        `<span class="st" style="background:${ST.in_progress.col}22;color:${ST.in_progress.ink}">Photo</span>`); }).join(''),
-      'QA/QC sends these back without one. Two taps at the pole saves a trip.') : ''}
-
-  ${card('Today', todayPts.length || 'nothing yet',
-      todayPts.map(p => { const t = ptTotals(p);
-        return ptItem(p, `${t.done} of ${t.planned} units${t.part?` · ${t.part} partial`:''}`); }).join('')
-      || '<div class="empty">Nothing booked today. Open the map and tap the pole you are standing at.</div>')}
-
-  ${waiting.length ? card('With the General Foreman for audit', waiting.length,
-      waiting.map(p => ptItem(p, 'Submitted '+ (rec(p.id).submittedAt ? new Date(rec(p.id).submittedAt).toLocaleString() : ''))).join('')) : ''}
-
-  <div class="btnrow" style="margin-top:2px">
-    <button class="btn" onclick="go('map')">Open the map</button>
-    <button class="btn pri" onclick="go('dfr')">Today's DFR</button>
-  </div><div style="height:14px"></div>`;
+  ${homeChips('foreman', sets, cur)}
+  ${homeList(list, cur === 'all' ? 'Nothing assigned to crew ' + esc(my||'—') + ' yet' : 'Nothing in this list',
+    { wo:false, crew:false })}
+  <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
+    <button class="btn" onclick="setHomeView('foreman','route')">Route</button></div>
+  ${cur === 'route' ? routeCard('mine') : ''}
+  <div style="height:14px"></div>`;
 }
 
 /* ---------------- GENERAL FOREMAN ---------------- */
 function gfHome(){
-  const b = bottlenecks('all'), ag = aging('all');
-  const wait = PTS.filter(p => rec(p.id).status === 'ready_audit');
-  const waitVal = wait.reduce((s,p) => s + ptTotals(p).total, 0);
   const td = today();
-  const crews = crewStats('all').filter(c => c.crew !== 'unassigned');
-  const activeToday = {};
-  PTS.forEach(p => { const r = rec(p.id); if (r.dates.includes(td)) {
-    const c = r.crew || 'unassigned'; activeToday[c] = (activeToday[c]||0) + ptTotals(p).total; } });
-
+  const sched = PTS.filter(p => { const st = ST[rec(p.id).status].step;
+    return st >= STEP_BUILD && st < STEP_LOCKED; });
+  const audit = sched.filter(p => rec(p.id).status === 'ready_audit');
+  const corr  = sched.filter(p => rec(p.id).status === 'correction');
+  const short = sched.filter(p => photoShort(p.id).length);
+  const ag = aging('all');
+  const auditVal = audit.reduce((s,p) => s + ptTotals(p).total, 0);
+  const crewSets = S.crews.filter(c => sched.some(p => rec(p.id).crew === c))
+    .map(c => ({ k:'crew:'+c, lbl:'Crew '+c, n:sched.filter(p => rec(p.id).crew === c).length }));
+  const sets = [
+    { k:'audit', lbl:'For audit', n:audit.length || null, col:audit.length?ST.ready_audit.col:null },
+    { k:'all',   lbl:'All scheduled', n:sched.length },
+    { k:'corr',  lbl:'Correction', n:corr.length || null, col:corr.length?ST.correction.col:null },
+    { k:'short', lbl:'Photos short', n:short.length || null }
+  ].filter(s => s.k === 'all' || s.n).concat(crewSets);
+  const cur = homeView('gf', audit.length ? 'audit' : 'all');
+  let list = cur === 'audit' ? audit : cur === 'corr' ? corr : cur === 'short' ? short
+    : cur.indexOf('crew:') === 0 ? sched.filter(p => rec(p.id).crew === cur.slice(5)) : sched;
+  const rank = { ready_audit:0, correction:1, in_progress:2, assigned:3 };
+  list = list.slice().sort((x,y) => (rank[rec(x.id).status] ?? 9) - (rank[rec(y.id).status] ?? 9) ||
+    String(rec(x.id).crew||'').localeCompare(String(rec(y.id).crew||'')) || x.sec.localeCompare(y.sec));
   return `
   <div class="card"><div class="body">
-    <div class="hint">${greet()} · General Foreman · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
-    <div class="row" style="align-items:flex-end;margin-top:3px">
+    <div class="row" style="align-items:flex-end">
       <div class="col">
-        <div style="font-size:28px;font-weight:800;line-height:1.15">${wait.length}</div>
-        <div class="hint">work point${wait.length===1?'':'s'} waiting on you${wait.length?` · ${money0(waitVal)}`:''}</div>
+        <div class="hint">${greet()} · General Foreman · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
+        <div style="font-size:26px;font-weight:800;line-height:1.15">${audit.length}</div>
+        <div class="hint">waiting on your audit${audit.length&&canSeeMoney()?` · ${money0(auditVal)}`:''}${
+          ag.oldestWait>24?` · oldest ${ag.oldestWait.toFixed(0)}h`:''}</div>
       </div>
-      ${wait.length ? `<button class="btn pri" onclick="go('qa')">Review</button>` : ''}
+      ${audit.length?`<button class="btn pri" onclick="go('qa')">Queue</button>`:''}
     </div>
-    ${ag.oldestWait > 1 ? `<div class="bar" style="height:5px;margin-top:9px"><i style="width:${Math.min(100, ag.oldestWait/24*100)}%;background:${ag.oldestWait>24?'#ef4444':'#f59e0b'}"></i></div>
-      <div class="hint" style="margin-top:4px">Oldest has been waiting ${ag.oldestWait.toFixed(0)} hours${ag.oldestWait>24?' — past the 24-hour mark':''}</div>`:''}
+    <div class="row" style="margin-top:10px;gap:14px">
+      <span class="hint"><b style="color:var(--txt)">${sched.length}</b> out with crews</span>
+      <span class="hint"><b style="color:${corr.length?ST.correction.ink:'var(--txt)'}">${corr.length}</b> in correction</span>
+      <span class="hint"><b style="color:${short.length?'#fbbf24':'var(--txt)'}">${short.length}</b> photos short</span>
+    </div>
   </div></div>
 
-  <div class="tiles">
-    <div class="tile"><b style="color:${b.over.length?'#fca5a5':'inherit'}">${b.over.length}</b><span>over 24h</span></div>
-    <div class="tile"><b style="color:${b.noPhoto.length?'#fbbf24':'inherit'}">${b.noPhoto.length}</b><span>photos short</span></div>
-    <div class="tile"><b style="color:${b.rej.length?ST.correction.ink:'inherit'}">${b.rej.length}</b><span>in correction</span></div>
-    <div class="tile"><b>${ag.avgQAHours?ag.avgQAHours.toFixed(0)+'h':'—'}</b><span>avg to pass</span></div>
-  </div>
-  <div style="height:10px"></div>
-
-  ${routeCard('audit')}
-
-  ${b.over.length ? card('Waiting more than 24 hours', b.over.length,
-      b.over.map(p => ptItem(p, 'Submitted '+new Date(rec(p.id).submittedAt).toLocaleString(),
-        `<span style="color:#fca5a5;font-weight:700">${money0(ptTotals(p).total)}</span>`)).join(''),
-      'Every hour these sit is an hour the money is not invoiced.') : ''}
-
-  ${b.noPhoto.length ? card('Blocked — photos short', b.noPhoto.length,
-      b.noPhoto.map(p => ptItem(p, `crew ${esc(rec(p.id).crew||'unassigned')} · ${photoShort(p.id).join(', ')}`)).join(''),
-      'Tell the crew before they leave the pole, not after.') : ''}
-
-  ${card('Crew activity today', money0(Object.values(activeToday).reduce((a,b2)=>a+b2,0)),
-      Object.keys(activeToday).length
-        ? Object.entries(activeToday).sort((a,b2)=>b2[1]-a[1]).map(([c,v]) =>
-          `<div class="itm"><div class="col"><div class="t">Crew ${esc(c)}</div>
-            <div class="s">${PTS.filter(p=>(rec(p.id).crew||'unassigned')===c && rec(p.id).dates.includes(td)).length} points touched today</div></div>
-            <div class="r" style="color:var(--txt);font-weight:700">${money0(v)}</div></div>`).join('')
-        : '<div class="empty">No work booked today yet</div>')}
-
-  ${crews.length ? card('This job, by crew', '',
-      crews.map(c => `<div class="itm"><div class="col"><div class="t">Crew ${esc(c.crew)}</div>
-        <div class="s">${c.pts} points · ${c.units} units${c.rej?` · ${c.rej} sent back`:''}</div>
-        <div class="bar"><i style="width:${Math.round(100*c.rev/(crews[0].rev||1))}%"></i></div></div>
-        <div class="r" style="color:var(--txt);font-weight:700">${money0(c.rev)}</div></div>`).join('')) : ''}
-
+  ${homeChips('gf', sets, cur)}
+  ${homeList(list, 'Nothing in this list', {})}
   <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
-    <button class="btn" onclick="go('qa')">QA queue</button></div>
+    <button class="btn" onclick="go('qa')">QA/QC</button></div>
   <div style="height:14px"></div>`;
 }
 
 /* ---------------- OFFICE / BILLING ---------------- */
 function officeHome(){
-  const ag = aging('all'), td = today();
-  const toAssign = PTS.filter(p => rec(p.id).status === 'ready_construction');
-  const withSpec = PTS.filter(p => ST[rec(p.id).status].step <= ST.pending_suspense.step);
-  const scheduled = PTS.filter(p => { const st = ST[rec(p.id).status].step;
-    return st >= STEP_BUILD && st < STEP_AUDIT; });
+  const td = today();
+  const toSched = PTS.filter(p => rec(p.id).status === 'ready_construction');
+  const toBill  = PTS.filter(p => rec(p.id).status === 'ready_invoice');
+  const billVal = toBill.reduce((s,p) => s + ptTotals(p).total, 0);
+  const sets = [
+    { k:'sched', lbl:'To schedule', n:toSched.length, col:toSched.length?ST.ready_construction.col:null },
+    { k:'bill',  lbl:'To invoice',  n:toBill.length,  col:toBill.length?ST.ready_invoice.col:null },
+    { k:'crews', lbl:'Crews' },
+    { k:'asb',   lbl:'Asbuilts' }
+  ];
+  const cur = homeView('office', toSched.length ? 'sched' : 'bill');
+  const body =
+    cur === 'sched' ? `
+      ${toSched.length ? `<div class="card"><div class="body">
+        <p class="hint">Cleared by the specialist and sitting idle — no crew can open these until you put one on them.</p>
+        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign — by section or all of it</button>
+      </div></div>` : ''}
+      ${homeList(toSched, 'Nothing is cleared and waiting', { crew:false, needs:false })}`
+    : cur === 'bill' ? `
+      <div class="card"><div class="body">
+        <div style="font-size:26px;font-weight:800;line-height:1.15">${money0(billVal)}</div>
+        <div class="hint">passed audit and not invoiced · ${toBill.length} point${toBill.length===1?'':'s'}</div>
+        <p class="hint" style="margin-top:8px">Open a point to mark it invoiced, or print the package from Asbuilts.</p>
+      </div></div>
+      ${homeList(toBill, 'Nothing waiting to invoice', { needs:false })}`
+    : cur === 'crews' ? `<h3 class="sect">Today's schedule by crew</h3>
+      ${S.crews.map(c => crewCard(c, td)).join('')}`
+    : asbuiltCard();
   return `
   <div class="card"><div class="body">
-    <div class="hint">${greet()} · Office / Billing · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
-    <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${scheduled.length}</div>
-    <div class="hint">work point${scheduled.length===1?'':'s'} out with crews today${
-      toAssign.length?` · ${toAssign.length} cleared and unassigned`:''}</div>
+    <div class="hint">${greet()} · Office / Billing · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
+    <div class="row" style="margin-top:4px;gap:16px">
+      <div><div style="font-size:22px;font-weight:800;line-height:1.1;color:${ST.ready_construction.ink}">${toSched.length}</div>
+        <div class="hint">to schedule</div></div>
+      <div><div style="font-size:22px;font-weight:800;line-height:1.1;color:${ST.ready_invoice.ink}">${toBill.length}</div>
+        <div class="hint">to invoice</div></div>
+      <div class="col" style="text-align:right"><div style="font-size:16px;font-weight:700">${money0(billVal)}</div>
+        <div class="hint">ready to bill</div></div>
+    </div>
   </div></div>
 
-  <div class="tiles">
-    <div class="tile"><b>${ag.toBill.length}</b><span>to invoice</span></div>
-    <div class="tile"><b style="color:${toAssign.length?ST.ready_construction.ink:'inherit'}">${toAssign.length}</b><span>to assign</span></div>
-    <div class="tile"><b>${withSpec.length}</b><span>in pre-con</span></div>
-    <div class="tile"><b>${ag.avgBillDays?ag.avgBillDays.toFixed(1)+'d':'—'}</b><span>audit to invoice</span></div>
-  </div>
-  <div style="height:10px"></div>
-
-  ${toAssign.length ? `<div class="card" style="border-color:${ST.ready_construction.col}">
-      <h3><span class="grow">Cleared and unassigned</span>
-        <span class="st" style="background:${ST.ready_construction.col}22;color:${ST.ready_construction.ink}">${toAssign.length}</span></h3>
-      <div class="body">
-        <p class="hint">No crew can touch these until you put one on them.</p>
-        <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Assign — by section or all of it</button>
-      </div>
-      <div class="body tight">${toAssign.slice(0,8).map(p => ptItem(p, `${ptTotals(p).planned} planned units · clear`,
-        `<button class="btn sm pri" onclick="event.stopPropagation();assignSheet('${p.id}')">Assign</button>`)).join('')}
-        ${toAssign.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${toAssign.length-8} more</div></div></div>` : ''}</div>
-    </div>` : ''}
-
-  <h3 class="sect">Today's schedule by crew</h3>
-  ${S.crews.map(c => crewCard(c, td)).join('')}
-  ${(() => { const un = PTS.filter(p => { const r = rec(p.id), st = ST[r.status].step;
-      return st >= STEP_BUILD && st < STEP_AUDIT && !r.crew; });
-     return un.length ? card('In build with no crew on the record', un.length,
-       un.map(p => ptItem(p, 'Assign a crew so it lands on someone',
-         `<button class="btn sm pri" onclick="event.stopPropagation();assignSheet('${p.id}')">Assign</button>`)).join('')) : ''; })()}
-
-  ${asbuiltCard()}
-
-  ${card('Approved — ready to invoice', money0(ag.approvedNotBilled),
-    ag.toBill.slice(0,15).map(p => ptItem(p, `${ptTotals(p).done} units · passed audit ${rec(p.id).approvedAt?new Date(rec(p.id).approvedAt).toLocaleDateString():''}`,
-      `<span style="font-weight:700;color:var(--txt)">${money0(ptTotals(p).total)}</span>`)).join('')
-    || '<div class="empty">Nothing waiting</div>',
-    'Open a point and hit Mark invoiced, or print the whole work order package from the asbuilts card above.')}
-
-  ${withSpec.length ? card('With the specialist', withSpec.length,
-      withSpec.slice(0,8).map(p => ptItem(p, preconNeeds(p.id).slice(0,2).map(x => x.split(' — ')[0]).join(', ') || 'clear')).join('')
-      + (withSpec.length > 8 ? `<div class="itm"><div class="col"><div class="s">+ ${withSpec.length-8} more</div></div></div>` : ''),
-      'Nothing for you until they release.') : ''}
-
-  <div class="btnrow"><button class="btn" onclick="go('dfr')">Time entry</button>
-    <button class="btn pri" onclick="exportRevenueCSV()">Revenue CSV</button></div>
+  ${homeChips('office', sets, cur)}
+  ${body}
   <div style="height:14px"></div>`;
 }
 
@@ -4416,6 +4500,27 @@ function unitTable(rows, foot){
       ${$?`<td class="n">${money(r.rate)}</td><td class="n">${money(r.amt)}</td>`:''}<td>${esc(r.note||'')}</td></tr>`).join('')}</tbody>
     ${$&&foot!=null?`<tfoot><tr><td colspan="8">Total</td><td class="n">${money(foot)}</td><td></td></tr></tfoot>`:''}</table></div>`;
 }
+/** who was on site and when — printed on the asbuilt */
+function timeTable(id){
+  const v = ptVisits(id);
+  if (!v.length) return '';
+  return `<h2>Crew on site</h2>
+    <table><thead><tr><th>Date</th><th>Crew</th><th>Arrived</th><th>Left</th><th class="n">On site</th><th>Note</th></tr></thead>
+    <tbody>${v.slice().reverse().map(x => `<tr><td>${x.date}</td><td>${esc(x.crew||'—')}</td>
+      <td>${clock(x.in)}</td><td>${x.out?clock(x.out):'—'}</td>
+      <td class="n">${fmtDur(visitMins(x))}</td><td>${esc(x.note||'')}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="4">Total time on site</td><td class="n">${fmtDur(ptMins(id))}</td><td></td></tr></tfoot></table>`;
+}
+function notesTable(id){
+  const l = noteLog(id);
+  const legacy = rec(id).notes;
+  if (!l.length && !legacy) return '';
+  return `<h2>Field notes</h2>
+    <table><thead><tr><th>When</th><th>Who</th><th>Note</th></tr></thead>
+    <tbody>${l.map(n => `<tr><td>${new Date(n.ts).toLocaleString()}</td>
+      <td>${esc(n.name||'')} ${esc(n.who)}</td><td>${esc(n.text)}</td></tr>`).join('')}
+      ${legacy?`<tr><td>—</td><td>—</td><td>${esc(legacy)}</td></tr>`:''}</tbody></table>`;
+}
 function ptRows(p){
   const r = rec(p.id), out = [];
   p.units.forEach(u => {
@@ -4448,10 +4553,13 @@ function ptSection(p, brk){
       <b>Status</b><span>${ST[r.status].lbl}${r.qa?` (QA ${r.qa.result} by ${r.qa.by} ${new Date(r.qa.ts).toLocaleDateString()})`:''}</span>
       <b>Position</b><span>${c?`${c.lat.toFixed(6)}, ${c.lng.toFixed(6)} (${c.src==='grid'?'estimated from grid ID':c.src})`:'not set'}</span>
       <b>Dates worked</b><span>${r.dates.join(', ')||'—'}</span>
-      ${r.ratesLockedAt?`<b>Rate basis</b><span>Locked at QA/QC approval, ${new Date(r.ratesLockedAt).toLocaleDateString()}</span>`:''}
+      ${r.ratesLockedAt?`<b>Rate basis</b><span>Locked at audit, ${new Date(r.ratesLockedAt).toLocaleDateString()}</span>`:''}
+      ${ptMins(p.id)?`<b>Time on site</b><span>${fmtDur(ptMins(p.id))} over ${ptVisits(p.id).length} visit${ptVisits(p.id).length===1?'':'s'}</span>`:''}
       ${r.notes?`<b>Field notes</b><span>${esc(r.notes)}</span>`:''}
     </div>
     ${rows.length?unitTable(rows, t.total):'<p style="font-size:10px;color:#777">Nothing recorded.</p>'}
+    ${timeTable(p.id)}
+    ${notesTable(p.id)}
     ${photoBlock(p)}</div>`;
 }
 function showDoc(kind, arg){
