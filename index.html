@@ -851,6 +851,14 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 
 .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .tile{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:9px 8px;text-align:center}
+/* a tile that filters the list under it — same look, but it is a button */
+button.tile{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:border-color .12s, background .12s}
+button.tile:active{transform:scale(.97)}
+button.tile.sel{border-color:var(--accent);background:#12203a}
+button.tile.sel span{color:var(--txt)}
+button.tile::after{content:'';display:block;height:2px;border-radius:2px;margin:6px 4px -2px;background:transparent}
+button.tile.sel::after{background:var(--accent)}
 .tile b{display:block;font-size:17px;line-height:1.2}
 .tile span{font-size:9.5px;color:var(--dim);letter-spacing:.03em;text-transform:uppercase;display:block;line-height:1.25}
 
@@ -912,10 +920,11 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .backbtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ---------- daily target meter ---------- */
-.meter{height:12px;border-radius:6px;background:var(--bg3);overflow:hidden;border:1px solid var(--line)}
-.meter i{display:block;height:100%;border-radius:6px 0 0 6px;background:linear-gradient(90deg,#166534,#22c55e);
-  transition:width .3s ease}
-.meter.full i{border-radius:6px;background:linear-gradient(90deg,#16a34a,#4ade80);box-shadow:0 0 10px rgba(34,197,94,.45)}
+.meter{position:relative;height:14px;border-radius:7px;background:var(--bg3);overflow:hidden;border:1px solid var(--line)}
+.meter i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:7px 0 0 7px;transition:width .3s ease}
+.meter i.plan{background:repeating-linear-gradient(135deg,rgba(34,197,94,.30) 0 6px,rgba(34,197,94,.14) 6px 12px)}
+.meter i.act{background:linear-gradient(90deg,#166534,#22c55e)}
+.meter.full i.act{border-radius:7px;background:linear-gradient(90deg,#16a34a,#4ade80);box-shadow:0 0 10px rgba(34,197,94,.45)}
 h3.sect{margin:14px 2px 8px;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
 
 /* ---------- sticky action bar ---------- */
@@ -1007,7 +1016,7 @@ table.dt tfoot td{font-weight:700;border-top:1px solid var(--line);border-bottom
 }
 
 </style>
-<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-05.32f70d-demo";</script>
+<script>const DEMO_BUILD = true;const BUILD_ID = "2026-08-06.e7b0e4-demo";</script>
 <script>/* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
  * (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
@@ -1149,7 +1158,7 @@ const ST = {
   pending_suspense:   { n:2, lbl:'Pending suspense items',  short:'Suspense',   col:'#eab308', ink:'#fde68a', step:2, who:'specialist' },
   ready_construction: { n:3, lbl:'Ready for construction',  short:'Ready',      col:'#06b6d4', ink:'#a5f3fc', step:3, who:'scheduler' },
   assigned:           { n:4, lbl:'Assigned to crew',        short:'Assigned',   col:'#7c3aed', ink:'#ddd6fe', step:4, who:'foreman' },
-  in_progress:        { n:5, lbl:'In progress',             short:'Building',   col:'#f97316', ink:'#fed7aa', step:5, who:'foreman' },
+  in_progress:        { n:5, lbl:'In progress',             short:'In progress', col:'#f97316', ink:'#fed7aa', step:5, who:'foreman' },
   ready_audit:        { n:6, lbl:'Ready for audit',         short:'Audit',      col:'#d946ef', ink:'#f5d0fe', step:6, who:'gf' },
   correction:         { n:7, lbl:'Immediate correction',    short:'Correction', col:'#dc2626', ink:'#fecaca', step:6, who:'foreman' },
   ready_invoice:      { n:8, lbl:'Ready for invoice',       short:'Invoice',    col:'#16a34a', ink:'#bbf7d0', step:7, who:'billing' },
@@ -1171,6 +1180,11 @@ const LEGACY = { not_started:'new', ready_precon:'new', in_progress:'in_progress
                  qa_approved:'ready_invoice', billed:'complete' };
 function migrateRole(){
   if (S.settings.role === 'office') S.settings.role = 'billing';
+  if (S.cost && S.cost.v !== 2){                 // the target is break-even now, not cost +15%
+    if (S.cost.targetMargin === 0.15) S.cost.targetMargin = 0;
+    if (!S.cost.workdays) S.cost.workdays = 5;
+    S.cost.v = 2;
+  }
 }
 function migrateStatus(){
   Object.keys(S.pts).forEach(id => {
@@ -1186,13 +1200,28 @@ const SUSP = [
   { k:'locates',   lbl:'Locates',        q:'Does this point need locates?',
     fields:[ {f:'ticket', lbl:'Ticket #'}, {f:'submitted', lbl:'Submitted', type:'date'},
              {f:'received', lbl:'Response received', type:'date'} ],
-    required:['submitted','received'], photo:'locate' },
+    required:['submitted','received'], photo:'locate', code:'L' },
   { k:'mot',       lbl:'MOT',            q:'Does this point need MOT?',
     fields:[ {f:'plan', lbl:'MOT plan / permit #'}, {f:'confirmed', lbl:'Confirmed', type:'date'} ],
-    required:['confirmed'] },
+    required:['confirmed'], code:'M' },
   { k:'switching', lbl:'Switching order', q:'Does this point need a switching order?',
     fields:[ {f:'ordered', lbl:'Ordered', type:'date'}, {f:'number', lbl:'Switching order # (foreman enters)'} ],
-    required:['ordered','number'] }
+    required:['ordered','number'], code:'S' },
+  /* Engineering got it wrong and the design has to change. We ask the customer;
+     nothing moves until the approval is in hand and attached to the point. */
+  { k:'change',    lbl:'Change order',   q:'Does the design need a change order?',
+    fields:[ {f:'reason', lbl:'What has to change'},
+             {f:'requested', lbl:'Requested from customer', type:'date'},
+             {f:'approved', lbl:'Customer approved', type:'date'},
+             {f:'ref', lbl:'Change order #'} ],
+    required:['requested','approved'], doc:'change', code:'C' },
+  /* Asked the other way round — "yes" is the clear answer. Not a pre-con
+     blocker: the paperwork can finish and sit with the specialist. What it
+     blocks is scheduling. You cannot send a crew to build what isn't there. */
+  { k:'material',  lbl:'Material',       q:'Is the material for this point available?',
+    avail:true, blocksSchedule:true, soft:true,
+    fields:[ {f:'eta', lbl:'Expected on site', type:'date'}, {f:'po', lbl:'PO / order #'} ],
+    required:[], code:'A' }
 ];
 function susp(id){
   const r = rec(id);
@@ -1205,8 +1234,15 @@ function suspOpen(id){
   const sp = susp(id), out = [];
   SUSP.forEach(s => {
     const v = sp[s.k];
-    if (v.needed == null) out.push({ item:s, why:'not answered' });
-    else if (v.needed){
+    if (v.needed == null){ out.push({ item:s, why:'not answered' }); return; }
+    // "Is material available?" — yes is the clear answer, no is the outstanding one
+    if (s.avail){
+      if (v.needed === false)
+        out.push({ item:s, why: String(v.eta||'').trim()
+          ? 'not on site — expected ' + v.eta : 'not on site yet', schedule:true });
+      return;
+    }
+    if (v.needed){
       s.required.forEach(f => {
         if (!String(v[f] || '').trim())
           out.push({ item:s, why:(s.fields.find(x => x.f === f) || {}).lbl + ' missing' });
@@ -1214,10 +1250,26 @@ function suspOpen(id){
       // the positive response itself, attached by the specialist — not the crew's job
       if (s.photo && !photosOf(id, s.photo).length)
         out.push({ item:s, why:'positive response not attached' });
+      // the customer's written approval, attached to the point
+      if (s.doc && !docsOf(id, s.doc).length)
+        out.push({ item:s, why:'customer approval not attached' });
     }
   });
   return out;
 }
+/** Material is the one item that does not stop the paperwork — it stops the crew.
+    A point can finish pre-con and sit with the specialist until material lands. */
+function materialOK(id){ return susp(id).material.needed === true; }
+/** why this point cannot be handed to a crew yet, or '' if it can */
+function scheduleBlock(id){
+  const m = susp(id).material;
+  if (m.needed === true) return '';
+  if (m.needed === false) return 'material not on site' + (String(m.eta||'').trim() ? ' — expected ' + m.eta : '');
+  return 'material not confirmed';
+}
+
+/* test/QA helper — set a suspense answer without touching the DOM */
+function setSuspQ(id,k,v){ susp(id)[k].needed=v; evalPrecon(id); save(); return susp(id)[k]; }
 
 /* ---------- field notes: a log, not one box anyone can overwrite ---------- */
 const NOTE_MAX = 500;
@@ -1236,7 +1288,11 @@ function delNote(id, i){
   l.splice(i,1); hist(id,'Field note deleted'); save(); renderPoint(id);
 }
 function canNote(){ return ['foreman','gf','specialist','pm'].includes(role()); }
-function suspDone(id){ return suspOpen(id).length === 0; }
+/* Material is "soft": it has to be answered, but a no does not hold the point
+   with the specialist and does not fail an audit. The only thing it stops is a
+   crew being sent — see scheduleBlock(). */
+function suspHard(id){ return suspOpen(id).filter(o => !o.item.soft); }
+function suspDone(id){ return suspHard(id).length === 0; }
 
 /* ---------- the pre-con rule ----------
    A point is "ridden out" once the specialist has shot the before photos.
@@ -1255,7 +1311,7 @@ function evalPrecon(id){
   r.status = target;
   hist(id, from + ' → ' + ST[target].lbl + (target === 'ready_construction'
     ? ' — last suspense item came back'
-    : ' — a suspense item went back open: ' + suspOpen(id).map(o => o.item.lbl).join(', ')));
+    : ' — a suspense item went back open: ' + suspHard(id).map(o => o.item.lbl).join(', ')));
   if (typeof routeAutoTick === 'function' && target !== 'new') routeAutoTick(id);
   return true;
 }
@@ -1263,7 +1319,7 @@ function evalPrecon(id){
 function preconNeeds(id){
   const r = rec(id);
   if (r.status === 'new') return preconBlockers(id);
-  return suspOpen(id).map(o => o.item.lbl.toLowerCase() + ' — ' + o.why);
+  return suspHard(id).map(o => o.item.lbl.toLowerCase() + ' — ' + o.why);
 }
 
 /* ---------- progress carried to the next day ---------- */
@@ -1272,9 +1328,42 @@ function lastProgress(id){ const l = progressLog(id); return l.length ? l[l.leng
 /** one-letter codes for what is outstanding, for the map pin */
 function suspCodes(id){
   const seen = {};
-  suspOpen(id).forEach(o => seen[o.item.lbl[0].toUpperCase()] = 1);
+  suspOpen(id).forEach(o => seen[o.item.code || o.item.lbl[0].toUpperCase()] = 1);
   return Object.keys(seen).join('');
 }
+
+/* ---------- documents ----------
+   Photos are one thing; paper is another. Change-order approvals, prints,
+   permits and letters attach as files — to a work point, or to the whole
+   work order when they cover the job rather than one pole. */
+const DOCK = [
+  { k:'change',   lbl:'Change order approval', hint:'The customer’s written approval of the design change' },
+  { k:'print',    lbl:'Work print / redline',  hint:'Issued print, or the redline the field marked up' },
+  { k:'permit',   lbl:'Permit',                hint:'DOT, railroad, county, environmental' },
+  { k:'sketch',   lbl:'Sketch / detail',       hint:'Anything drawn to explain the build' },
+  { k:'letter',   lbl:'Letter / email',        hint:'Authorization, correspondence worth keeping' },
+  { k:'other',    lbl:'Other document',        hint:'Everything else' }
+];
+const DOC_MAX = 3 * 1024 * 1024;                 // 3 MB — it lives in the phone's storage
+const dockOf = k => DOCK.find(d => d.k === k) || { k, lbl:k, hint:'' };
+/** documents on one work point, optionally of one kind */
+function docsOf(id, k){
+  const r = rec(id); r.docs = r.docs || [];
+  return k ? r.docs.filter(d => d.kind === k) : r.docs;
+}
+/** documents on the whole work order */
+function woDocs(wo){
+  S.docs = S.docs || {};
+  return S.docs[wo] = S.docs[wo] || [];
+}
+function fmtBytes(n){
+  return n >= 1048576 ? (n/1048576).toFixed(1) + ' MB'
+       : n >= 1024 ? Math.round(n/1024) + ' KB' : (n||0) + ' B';
+}
+const docIcon = mime => /pdf/i.test(mime||'') ? 'PDF'
+  : /image/i.test(mime||'') ? 'IMG'
+  : /word|document/i.test(mime||'') ? 'DOC'
+  : /sheet|excel|csv/i.test(mime||'') ? 'XLS' : 'FILE';
 
 /* ---------- photo kinds ---------- */
 const PHOTO = [
@@ -1325,7 +1414,7 @@ function auditBlockers(id){
   if (badQty.length) out.push(`${badQty.length} added unit${badQty.length===1?'':'s'} with no quantity`);
   const sw = susp(id).switching;
   if (sw.needed === true && !String(sw.number||'').trim()) out.push('Switching order number not entered');
-  suspOpen(id).forEach(o => out.push(`${o.item.lbl} — ${o.why}`));
+  suspHard(id).forEach(o => out.push(`${o.item.lbl} — ${o.why}`));
   if (!p.units.some(u => (r.units[u.seq]||{}).state === 'complete') && !r.adders.length)
     out.push('Nothing marked done yet');
   return out;
@@ -1354,10 +1443,16 @@ const DEF = {
   pts:{}, days:{}, pending:0, log:[], inbox:[],
   // schedule overrides — what the office has corrected against the printed rate sheet
   rates:{ labor:{}, equip:{}, unit:{} },
+  // the specialist's corrections to the printed takeoff, per point
+  unitEdits:{},
+  // documents attached to a whole work order, keyed by WO number
+  docs:{},
+  // a crew's standing roster — set once by the foreman, reused every day
+  rosters:{},
   crews:['412','418','425','431'],
   // internal cost side — Project Manager only. Percentages seed the per-line rates.
-  cost:{ laborPct:0.58, equipPct:0.62, labor:{}, equip:{}, blendedST:0, targetMargin:0.15,
-         gfOn:true, gfClass:'SUPER VISOR', gfHours:10 }
+  cost:{ laborPct:0.58, equipPct:0.62, labor:{}, equip:{}, blendedST:0, targetMargin:0,
+         gfOn:true, gfClass:'SUPER VISOR', gfHours:10, workdays:5, v:2 }
 };
 let S = load();
 function load(){
@@ -1481,8 +1576,101 @@ const ORIG = {
   labor: Object.fromEntries(LAB.map(l => [l.name, { st:l.st, ot:l.ot }])),
   equip: Object.fromEntries(EQP.map(e => [e.name, e.rate])),
   unit:  Object.fromEntries(CAT.map(u => [u.code, u.rate])),
-  ptUnits: Object.fromEntries(PTS.map(p => [p.id, p.units.map(u => u.rate)]))
+  // keyed by seq, not by index — the specialist can add and drop lines
+  ptUnits: Object.fromEntries(PTS.map(p =>
+    [p.id, Object.fromEntries(p.units.map(u => [u.seq, u.rate]))]))
 };
+
+/* ---------- the takeoff, as corrected in the field ----------
+   Engineering draws it from a desk. The specialist rides it out and finds the
+   pole is a different class, or a riser nobody drew, or a unit that cannot be
+   built at all. He edits the takeoff here; the printed design is kept intact
+   underneath so nothing is lost and everything is auditable. */
+const UORIG = Object.fromEntries(PTS.map(p => [p.id, p.units.slice()]));
+function unitEdits(pid){
+  S.unitEdits = S.unitEdits || {};
+  const e = S.unitEdits[pid] = S.unitEdits[pid] || { drop:[], add:[], est:{} };
+  e.drop = e.drop || []; e.add = e.add || []; e.est = e.est || {};
+  return e;
+}
+function isDesignUnit(pid, seq){ return (UORIG[pid] || []).some(u => u.seq === seq); }
+function droppedUnits(pid){
+  const d = (S.unitEdits && S.unitEdits[pid] && S.unitEdits[pid].drop) || [];
+  return (UORIG[pid] || []).filter(u => d.indexOf(u.seq) >= 0);
+}
+/** Rebuild every point's units array from the printed design plus the field's
+    corrections. Idempotent — safe to call after any edit. */
+function applyUnitEdits(){
+  PTS.forEach(p => {
+    const e = (S.unitEdits || {})[p.id];
+    if (!e){ p.units = UORIG[p.id].slice(); return; }
+    const drop = e.drop || [], est = e.est || {};
+    p.units = UORIG[p.id].filter(u => drop.indexOf(u.seq) < 0)
+                .map(u => est[u.seq] != null ? Object.assign({}, u, { estQty:+est[u.seq], reEst:true }) : u)
+                .concat((e.add || []).map(a => Object.assign({}, a)));
+  });
+}
+/** the specialist re-estimating a designed quantity against what is really there */
+function setDesignQty(pid, seq, qty){
+  const e = unitEdits(pid), u = (UORIG[pid] || []).find(x => x.seq === seq);
+  const n = Number(qty);
+  if (u){
+    if (qty === '' || n === u.estQty) delete e.est[seq]; else e.est[seq] = n;
+  } else {
+    const a = e.add.find(x => x.seq === seq);
+    if (a) a.estQty = n || 0;
+  }
+  applyUnitEdits();
+}
+function nextSeq(pid){
+  const used = (UORIG[pid] || []).map(u => u.seq).concat(unitEdits(pid).add.map(u => u.seq));
+  return (used.length ? Math.max.apply(null, used) : 0) + 1;
+}
+/** add a unit from the rate sheet to the design takeoff */
+function addDesignUnit(pid, code, qty, why){
+  const c = CAT.find(u => u.code === code);
+  if (!c) return false;
+  const e = unitEdits(pid), seq = nextSeq(pid);
+  e.add.push({ seq, code:c.code, desc:c.desc, spec:c.spec || '—', uom:c.uom || 'EA',
+    estQty:Number(qty) || 1, rate:c.rate, note:'Added at pre-con: ' + (why || 'found in the field'),
+    addedBy:role(), addedAt:new Date().toISOString() });
+  applyUnitEdits(); applyRateOverrides();
+  hist(pid, `Takeoff — added ${c.code} ${c.desc} × ${Number(qty)||1} ${c.uom||'EA'}${why?' ('+why+')':''}`);
+  return true;
+}
+/** drop a designed unit that cannot be built, or restore it */
+function dropDesignUnit(pid, seq, why){
+  const e = unitEdits(pid), u = (UORIG[pid] || []).find(x => x.seq === seq);
+  if (!u) {                                   // a unit the specialist added — remove it outright
+    const i = e.add.findIndex(x => x.seq === seq);
+    if (i < 0) return false;
+    const g = e.add[i]; e.add.splice(i,1);
+    delete (rec(pid).units || {})[seq];
+    applyUnitEdits(); applyRateOverrides();
+    hist(pid, `Takeoff — removed added unit ${g.code} ${g.desc}`);
+    return true;
+  }
+  if (e.drop.indexOf(seq) < 0) e.drop.push(seq);
+  delete (rec(pid).units || {})[seq];
+  applyUnitEdits(); applyRateOverrides();
+  hist(pid, `Takeoff — dropped designed unit ${u.code} ${u.desc}${why?' ('+why+')':''}`);
+  return true;
+}
+function restoreDesignUnit(pid, seq){
+  const e = unitEdits(pid), i = e.drop.indexOf(seq);
+  if (i < 0) return false;
+  e.drop.splice(i,1);
+  applyUnitEdits(); applyRateOverrides();
+  const u = (UORIG[pid] || []).find(x => x.seq === seq) || {};
+  hist(pid, `Takeoff — restored ${u.code || 'unit'} ${u.desc || ''}`);
+  return true;
+}
+/** how far this point's takeoff has moved from the print */
+function takeoffDelta(pid){
+  const e = (S.unitEdits || {})[pid] || { drop:[], add:[] };
+  return { dropped:(e.drop||[]).length, added:(e.add||[]).length,
+           any:((e.drop||[]).length + (e.add||[]).length) > 0 };
+}
 /** Reset the in-memory schedule to the printed one, then lay the office's
     corrections back over it. Idempotent — safe to call any number of times.
     Booked lines are protected by their own rate snapshot, not by this. */
@@ -1494,8 +1682,11 @@ function applyRateOverrides(){
   EQP.forEach(e => { e.rate = R.equip[e.name] != null ? +R.equip[e.name] : ORIG.equip[e.name]; });
   CAT.forEach(u => { u.rate = R.unit[u.code] != null ? +R.unit[u.code] : ORIG.unit[u.code]; });
   PTS.forEach(p => {
-    const base = ORIG.ptUnits[p.id] || [];
-    p.units.forEach((u,i) => { u.rate = R.unit[u.code] != null ? +R.unit[u.code] : base[i]; });
+    const base = ORIG.ptUnits[p.id] || {};
+    p.units.forEach(u => {
+      u.rate = R.unit[u.code] != null ? +R.unit[u.code]
+             : (base[u.seq] != null ? base[u.seq] : ORIG.unit[u.code]);
+    });
   });
 }
 function overrideCount(){
@@ -1758,8 +1949,13 @@ function renderChips(){
         <i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>${ST[k].n} ${ST[k].short} ${counts[k]}</button>`).join('')
     + SUSP.map(sp => {
         const n = pool.filter(p => matchFilter(p, 'need:'+sp.k)).length;
+        const lbl = sp.avail ? 'waiting on material' : 'needs ' + sp.lbl.toLowerCase();
         return n ? `<button class="chip ${S.settings.filter==='need:'+sp.k?'sel':''}"
-          onclick="pickFilter('need:${sp.k}')">needs ${sp.lbl.toLowerCase()} ${n}</button>` : ''; }).join('')
+          onclick="pickFilter('need:${sp.k}')">${lbl} ${n}</button>` : ''; }).join('')
+    + (() => { const n = pool.filter(p => matchFilter(p, 'held')).length;
+        return n ? `<button class="chip ${S.settings.filter==='held'?'sel':''}"
+          onclick="pickFilter('held')" style="${S.settings.filter==='held'?'background:#a16207;border-color:#a16207':''}">
+          cleared, no material ${n}</button>` : ''; })()
     + (() => { const n = pool.filter(p => matchFilter(p, 'need:photos')).length;
         return n ? `<button class="chip ${S.settings.filter==='need:photos'?'sel':''}"
           onclick="pickFilter('need:photos')">not ridden ${n}</button>` : ''; })()
@@ -1793,12 +1989,19 @@ function matchFilter(p, f){
   if (f === 'qa') return r.status === 'ready_audit' || r.status === 'correction';
   if (f === 'done') return ST[r.status].step >= STEP_LOCKED;
   if (f === 'photos') return r.photos.length > 0;
+  if (f === 'held') return r.status === 'ready_construction' && !!scheduleBlock(p.id);
   if (f.indexOf('need:') === 0){
     const k = f.slice(5);
     if (k === 'photos') return ST[r.status].step <= STEP_PRECON && !photosOf(p.id,'before').length;
     const v = susp(p.id)[k];
     const spec = SUSP.find(x => x.k === k);
-    return ST[r.status].step <= STEP_PRECON && spec &&
+    if (!spec) return false;
+    // "is material available?" — outstanding means unanswered or answered no
+    if (spec.avail) return ST[r.status].step < STEP_BUILD && v.needed !== true;
+    if (spec.doc) return ST[r.status].step <= STEP_PRECON &&
+      (v.needed == null || (v.needed && (spec.required.some(x => !String(v[x]||'').trim())
+                                         || !docsOf(p.id, spec.doc).length)));
+    return ST[r.status].step <= STEP_PRECON &&
            (v.needed == null || (v.needed && spec.required.some(x => !String(v[x]||'').trim())));
   }
   if (f === 'mine') return (r.crew || null) === (S.settings.crew || null);
@@ -1818,7 +2021,7 @@ function renderLegend(){
     `<div class="hd" onclick="toggleLegend()" style="cursor:pointer">
        Stages <span style="margin-left:auto">${open?'▾':'▸'}</span></div>` +
     (open ? rows + `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line);color:var(--dim2);font-size:9.5px">
-       stage 2 pins show what is outstanding — L locates · M MOT · S switching</div>` + (canSeeMoney()
+       stage 2 pins show what is outstanding — L locates · M MOT · S switching · C change order · A awaiting material</div>` + (canSeeMoney()
       ? `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line)">Booked<b style="margin-left:auto;padding-left:6px">${money0(t.total)}</b></div>`
       : `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line)">Units done<b style="margin-left:auto;padding-left:6px">${t.done}</b></div>`) : '');
 }
@@ -1926,6 +2129,16 @@ function canEditUnits(id){
   if (rl === 'pm' || rl === 'gf') return true;
   return st >= STEP_BUILD;                       // foreman: only once it is assigned to a crew
 }
+/** Editing the takeoff itself — adding a unit nobody drew, dropping one that
+    cannot be built, re-estimating a quantity. This is the specialist's job on
+    the ride-out: make sure the thing is constructable before a crew rolls. */
+function canEditTakeoff(id){
+  const st = ST[rec(id).status].step, rl = role();
+  if (rl === 'pm') return st < STEP_LOCKED;
+  if (rl === 'specialist') return st < STEP_BUILD;       // his, up to the moment a crew gets it
+  if (rl === 'gf') return st < STEP_LOCKED;
+  return false;
+}
 function canEditSusp(id, field){
   const rl = role();
   if (rl === 'pm' || rl === 'specialist') return true;
@@ -1943,7 +2156,7 @@ function renderPoint(id){
   CUR = id; const p = pt(id); if (!p) return;
   const r = rec(id), t = ptTotals(p), w = WOS[p.wo], st = ST[r.status];
   const can = canEditUnits(id), c = coord(p);
-  const short = photoShort(id), sOpen = suspOpen(id);
+  const short = photoShort(id), sOpen = suspHard(id);
   document.getElementById('ptbody').innerHTML = `
   <button class="btn backbtn" onclick="goBack()">
     <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>${BACKTO==='home'?'Home':BACKTO==='map'?'Map':BACKTO==='qa'?'QA/QC':'Points'}</button>
@@ -1968,8 +2181,9 @@ function renderPoint(id){
         r.crew?` · crew ${esc(r.crew)}`:' · no crew assigned'}${
         ptMins(id)?` · <b>${fmtDur(ptMins(id))} on site</b>`:''}</div>
       <div class="btnrow" style="margin-top:10px">
-        <button class="btn sm" onclick="go('map');flyTo('${id}')">Show on map</button>
-        <button class="btn sm" onclick="showDoc('point','${id}')">Asbuilt</button>
+        ${role() !== 'foreman' ? `<button class="btn sm" onclick="showDoc('point','${id}')">Asbuilt</button>` : ''}
+        ${topArriveBtn(p, r)}
+        <button class="btn sm" onclick="go('map');flyTo('${id}')">Map</button>
       </div>
     </div>
   </div>
@@ -1981,6 +2195,7 @@ function renderPoint(id){
     ${!can && role()==='foreman' && ST[r.status].step < STEP_BUILD
       ? `<div class="body"><p class="hint">Locked until the office assigns this point to a crew.</p></div>` : ''}
     <div class="body tight">${p.units.map(u => unitRow(p,u,can)).join('') || '<div class="empty">No planned units at this point</div>'}</div>
+    ${takeoffCard(id)}
   </div>
 
   <div class="card" id="c-adders">
@@ -2006,6 +2221,8 @@ function renderPoint(id){
       <span class="hint" style="text-transform:none;letter-spacing:0">${r.photos.length}${short.length?` · short: ${short.join(', ')}`:''}</span></h3>
     <div class="body">${PHOTO.map(k => photoSection(id,k)).join('<hr>')}</div>
   </div>
+
+  ${docCard(id)}
 
   <div class="card" id="c-notes">
     <h3><span class="grow">Field notes</span>
@@ -2053,6 +2270,19 @@ function renderPoint(id){
   if (bar) bar.innerHTML = actionBar(p, r);
 }
 
+/** Arrive lives in the top row now, between Asbuilt and Map — it is the first
+    thing a crew touches at the pole, not something to hunt for at the bottom. */
+function topArriveBtn(p, r){
+  const rl = role(), id = p.id;
+  if (!['foreman','pm','gf'].includes(rl)) return '';
+  const st = ST[r.status].step;
+  if (st < STEP_BUILD || st >= STEP_AUDIT) return '';
+  const D = dayRec(today(), r.crew || DFRCREW), v = openVisit(D);
+  return (v && v.ptId === id)
+    ? `<button class="btn sm qa" onclick="departSheet('${v.id}')">Clock off · ${fmtDur(visitMins(v))}</button>`
+    : `<button class="btn sm pri" onclick="arriveHere('${id}')">Arrived</button>`;
+}
+
 /** the bar that sits above the nav — whatever this role can do right now */
 function actionBar(p, r){
   const id = p.id, rl = role(), st = ST[r.status];
@@ -2065,11 +2295,6 @@ function actionBar(p, r){
   if ((r.status === 'assigned' || r.status === 'in_progress' || r.status === 'correction')
       && (rl === 'foreman' || rl === 'pm' || rl === 'gf')){
     const n = auditBlockers(id).length;
-    const D = dayRec(today(), r.crew || DFRCREW), v = openVisit(D);
-    if (v && v.ptId === id)
-      B.push(`<button class="btn qa big" onclick="departSheet('${v.id}')">Clock off · ${fmtDur(visitMins(v))}</button>`);
-    else
-      B.push(`<button class="btn pri big" onclick="arriveHere('${id}')">Arrived</button>`);
     if (r.status !== 'assigned')
       B.push(`<button class="btn big" onclick="saveProgress('${id}')">Save</button>`);
     B.push(`<button class="btn ${n?'':'ok'} big" onclick="submitAudit('${id}')">
@@ -2080,6 +2305,9 @@ function actionBar(p, r){
     B.push(`<button class="btn ok big" onclick="auditPass('${id}')">Pass audit</button>`);
   }
   if (r.status === 'ready_construction'){
+    const held = scheduleBlock(id);
+    if (held && (rl === 'scheduler' || rl === 'pm' || rl === 'gf' || rl === 'foreman'))
+      return `<div class="bar-note" style="color:var(--warn)">Cannot be scheduled — ${esc(held)}</div>`;
     if (rl === 'scheduler' || rl === 'pm' || rl === 'gf')
       B.push(`<button class="btn pri big" onclick="assignSheet('${id}')">Assign a crew</button>`);
     if (rl === 'foreman')
@@ -2102,6 +2330,7 @@ function arriveHere(id){
   renderPoint(id);
 }
 function claimPoint(id){
+  if (!guardSchedule([id])) return;
   const r = rec(id), crew = S.settings.crew || S.crews[0];
   r.crew = crew; r.assignedAt = new Date().toISOString(); r.status = 'assigned';
   hist(id, 'Taken by crew ' + crew + ' (self-assigned)');
@@ -2130,6 +2359,13 @@ function bulkAssignSheet(){
 function bulkAssign(ids){
   const sel = document.getElementById('basg');
   const crew = sel ? sel.value : S.crews[0];
+  const ok = ids.filter(id => !scheduleBlock(id));
+  if (ok.length !== ids.length){
+    const held = ids.length - ok.length;
+    if (!ok.length){ guardSchedule(ids); return; }
+    toast(`${held} point${held===1?'':'s'} held back — material not on site`, 'bad');
+    ids = ok;
+  }
   ids.forEach(id => {
     const r = rec(id);
     if (r.status !== 'ready_construction') return;
@@ -2152,7 +2388,7 @@ function assignSheet(id){
     <button class="btn pri wide" onclick="assignCrew('${id}');closeSheet()">Assign — it drops on their home screen</button>`);
 }
 
-/** the ten-stage rail, current stage lit */
+/** the nine-stage rail, current stage lit */
 function stageBar(status){
   const cur = ST[status].n;
   return `<div class="rail">${ORDER.map(k => {
@@ -2163,19 +2399,22 @@ function stageBar(status){
 
 /* ---------- suspense items ---------- */
 function suspCard(id){
-  const sp = susp(id), r = rec(id), open = suspOpen(id);
+  const sp = susp(id), r = rec(id), open = suspHard(id), held = scheduleBlock(id);
   const show = ST[r.status].step <= STEP_AUDIT || open.length;
   if (!show) return '';
   return `<div class="card" id="c-susp"><h3><span class="grow">Suspense items — pre-con</span>
     <span class="st" style="background:${open.length?'#4a3410':'#0d3b22'};color:${open.length?'#fbbf24':'#6ee7b7'}">
       ${open.length ? open.length+' open' : 'all clear'}</span></h3>
     <div class="body tight">${SUSP.map(s => suspRow(id, s, sp[s.k])).join('')}</div>
+    ${held && ST[r.status].step >= STEP_PRECON && ST[r.status].step < STEP_BUILD
+      ? `<div class="body"><p class="hint" style="color:var(--warn);margin:0">
+          <b>Not schedulable — ${esc(held)}.</b> Everything else on this point is finished.</p></div>` : ''}
     <div class="body"><p class="hint">${
       ST[r.status].step > STEP_PRECON
         ? (open.length ? 'These went back open after the point was released — the audit will catch it.'
                        : 'Answered and back. Kept here for the audit trail.')
         : r.status === 'new'
-          ? 'Answer all three, shoot the before photos, then hit Complete pre-con at the bottom.'
+          ? `Answer all ${SUSP.length}, shoot the before photos, then hit Complete pre-con at the bottom.`
           : open.length
             ? 'It releases itself to Ready for construction the moment the last one comes back. Anyone can fill these in — the switching order number comes from the foreman at the pole.'
             : 'Answered and back.'}</p></div></div>`;
@@ -2183,21 +2422,44 @@ function suspCard(id){
 function suspRow(id, s, v){
   const yes = v.needed === true, no = v.needed === false;
   const editable = canEditSusp(id);
-  return `<div class="u ${yes && s.required.some(f => !String(v[f]||'').trim()) ? 'part' : (no||yes ? 'done' : '')}">
+  // for "is material available?" the clear answer is yes, and the fields open on no
+  const open = s.avail ? no : yes;
+  const short = s.avail ? no
+    : yes && (s.required.some(f => !String(v[f]||'').trim())
+              || (s.doc && !docsOf(id, s.doc).length));
+  const cls = short ? 'part' : ((yes||no) ? 'done' : '');
+  const eta = s.avail && no && String(v.eta||'').trim();
+  return `<div class="u ${cls}">
     <div class="top"><div class="col">
-      <div class="desc">${s.lbl}</div>
-      <div class="meta">${s.q}</div></div></div>
+      <div class="desc">${s.lbl}${s.blocksSchedule && no ? ' <span style="color:var(--warn)">· blocks scheduling</span>' : ''}</div>
+      <div class="meta">${s.q}${eta?` · expected ${esc(v.eta)}`:''}</div></div></div>
     <div class="ctl">
       <div class="seg">
-        <button class="${yes?'on y':''}" ${editable?'':'disabled'} onclick="setSusp('${id}','${s.k}','needed',true)">Yes</button>
-        <button class="${no?'on g':''}" ${editable?'':'disabled'} onclick="setSusp('${id}','${s.k}','needed',false)">No</button>
+        <button class="${yes?('on '+(s.avail?'g':'y')):''}" ${editable?'':'disabled'} onclick="setSusp('${id}','${s.k}','needed',true)">Yes</button>
+        <button class="${no?('on '+(s.avail?'r':'g')):''}" ${editable?'':'disabled'} onclick="setSusp('${id}','${s.k}','needed',false)">No</button>
       </div>
     </div>
-    ${yes ? `<div class="grid2" style="margin-top:8px">${s.fields.map(f => `
+    ${open ? `<div class="grid2" style="margin-top:8px">${s.fields.map(f => `
       <div><label class="f">${f.lbl}${s.required.includes(f.f)?' *':''}</label>
         <input ${f.type==='date'?'type="date"':''} value="${esc(v[f.f]||'')}"
           ${canEditSusp(id,f.f)?'':'disabled'} style="min-height:38px;font-size:12.5px"
           onchange="setSusp('${id}','${s.k}','${f.f}',this.value)"></div>`).join('')}</div>` : ''}
+    ${open && s.doc ? (() => {
+      const have = docsOf(id, s.doc);
+      return `<div style="margin-top:8px">
+        ${have.map(d => `<div class="itm" style="padding:6px 0">
+          <span class="tag b" style="position:static;flex:0 0 auto">${docIcon(d.mime)}</span>
+          <div class="col"><div class="t" style="font-size:12.5px">${esc(d.name)}</div>
+            <div class="s">${fmtBytes(d.size)} · ${new Date(d.ts).toLocaleDateString()}</div></div>
+          <div class="r"><button class="btn sm" onclick="openDocFile('${id}','${d.id}')">Open</button></div></div>`).join('')}
+        ${canEditSusp(id) ? `<button class="btn wide ${have.length?'':'pri'}" style="margin-top:4px"
+          onclick="attachDoc('point','${id}','${s.doc}')">
+          ${have.length ? 'Attach another approval' : 'Attach the customer approval *'}</button>` : ''}
+        ${!have.length ? `<p class="hint" style="margin-top:6px">The approval document is what releases this.
+          A date without the paper behind it will not clear the audit.</p>` : ''}
+      </div>`; })() : ''}
+    ${s.avail && no ? `<p class="hint" style="margin-top:8px">Pre-con can still be finished. This point will sit with
+      the specialist and cannot be scheduled to a crew until material is on site.</p>` : ''}
   </div>`;
 }
 function setSusp(id, k, f, v){
@@ -2215,6 +2477,119 @@ function setSusp(id, k, f, v){
   const spec = SUSP.find(s => s.k === k);
   if (spec && spec.photo && f === spec.required[spec.required.length-1] && String(v||'').trim()
       && !photosOf(id, spec.photo).length) askForResponse(id, spec);
+}
+
+/* ---------- documents ---------- */
+function canAddDoc(scope, id){
+  const rl = role();
+  if (rl === 'billing' || rl === 'scheduler') return scope === 'wo' ? false : false;
+  if (scope === 'wo') return ['pm','gf','specialist'].includes(rl);
+  return ST[rec(id).status].step < STEP_LOCKED || rl === 'pm';
+}
+/** Attach a file. scope 'point' → a work point, scope 'wo' → the whole work order. */
+function attachDoc(scope, id, kind){
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,.png,.jpg,.jpeg,.heic,.doc,.docx,.xls,.xlsx,.csv,.txt,image/*,application/pdf';
+  inp.onchange = () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    if (f.size > DOC_MAX){
+      toast(`${fmtBytes(f.size)} is too big — ${fmtBytes(DOC_MAX)} max per document`, 'bad');
+      return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      const d = { id:'d'+Date.now()+Math.random().toString(36).slice(2,6), kind:kind || 'other',
+        name:f.name, mime:f.type || '', size:f.size, data:fr.result,
+        ts:new Date().toISOString(), by:S.settings.foreman || ROLE_LBL[role()] || role(), role:role() };
+      if (scope === 'wo'){
+        woDocs(id).push(d);
+        S.log.push({ ts:d.ts, who:role(), what:`Document attached to WO ${id}: ${f.name}` });
+      } else {
+        const r = rec(id); r.docs = r.docs || []; r.docs.push(d);
+        hist(id, `${dockOf(d.kind).lbl} attached — ${f.name} (${fmtBytes(f.size)})`);
+        evalPrecon(id);
+      }
+      save();
+      toast(f.name + ' attached', 'ok');
+      if (scope === 'wo') renderAll(); else { renderPoint(id); drawPins(); }
+    };
+    fr.onerror = () => toast('Could not read that file', 'bad');
+    fr.readAsDataURL(f);
+  };
+  inp.click();
+}
+function openDocFile(id, did){
+  const list = id && pt(id) ? docsOf(id) : woDocs(id);
+  const d = list.find(x => x.id === did); if (!d) return;
+  if (/image/i.test(d.mime)){
+    openSheet(d.name, `<img src="${d.data}" style="width:100%;border-radius:10px;display:block">
+      <p class="hint" style="margin-top:8px">${dockOf(d.kind).lbl} · ${fmtBytes(d.size)} · attached by ${esc(d.by||'—')}</p>`);
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = d.data; a.download = d.name; a.click();
+  toast('Downloading ' + d.name, 'ok');
+}
+function delDocFile(scope, id, did){
+  if (!confirm('Remove this document?')) return;
+  const list = scope === 'wo' ? woDocs(id) : docsOf(id);
+  const i = list.findIndex(x => x.id === did); if (i < 0) return;
+  const d = list[i]; list.splice(i,1);
+  if (scope === 'wo') S.log.push({ ts:new Date().toISOString(), who:role(), what:`Document removed from WO ${id}: ${d.name}` });
+  else { hist(id, `Document removed — ${d.name}`); evalPrecon(id); }
+  save();
+  if (scope === 'wo') renderAll(); else renderPoint(id);
+}
+function docRow(scope, id, d){
+  const can = canAddDoc(scope, id);
+  return `<div class="itm">
+    <span class="tag b" style="position:static;flex:0 0 auto">${docIcon(d.mime)}</span>
+    <div class="col"><div class="t" style="font-size:13px">${esc(d.name)}</div>
+      <div class="s">${dockOf(d.kind).lbl} · ${fmtBytes(d.size)} · ${new Date(d.ts).toLocaleDateString()} · ${esc(d.by||'—')}</div></div>
+    <div class="r"><div class="btnrow" style="justify-content:flex-end">
+      <button class="btn sm" onclick="openDocFile('${id}','${d.id}')">Open</button>
+      ${can?`<button class="btn sm bad" onclick="delDocFile('${scope}','${id}','${d.id}')">×</button>`:''}
+    </div></div></div>`;
+}
+function docKindSheet(scope, id){
+  openSheet('Attach a document', `
+    <p class="hint" style="margin-bottom:10px">What is it? The kind is what makes it findable a year from now.</p>
+    ${DOCK.map(k => `<button class="itm" onclick="closeSheet();attachDoc('${scope}','${id}','${k.k}')">
+      <div class="col"><div class="t">${k.lbl}</div><div class="s">${k.hint}</div></div>
+      <div class="r">›</div></button>`).join('')}
+    <p class="hint" style="margin-top:10px">${fmtBytes(DOC_MAX)} per file. PDFs, photos of paper, Word, Excel — anything.</p>`);
+}
+/** documents on one work point */
+function docCard(id){
+  const list = docsOf(id), can = canAddDoc('point', id);
+  return `<div class="card" id="c-docs">
+    <h3><span class="grow">Documents</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">${list.length||''}</span></h3>
+    <div class="body tight">${list.map(d => docRow('point', id, d)).join('')
+      || '<div class="empty">Nothing attached to this point</div>'}</div>
+    ${can ? `<div class="body">
+      <button class="btn wide" onclick="docKindSheet('point','${id}')">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Attach a document</button>
+      <p class="hint" style="margin-top:8px">Change-order approvals, redlines, permits — anything that has to travel
+        with this pole. Documents print on the asbuilt as a list.</p></div>` : ''}
+  </div>`;
+}
+/** documents on a whole work order */
+function woDocCard(wo){
+  const list = woDocs(wo), can = canAddDoc('wo', wo);
+  return `<div class="card" id="c-wodocs">
+    <h3><span class="grow">Job documents — WO ${wo}</span>
+      <span class="hint" style="text-transform:none;letter-spacing:0">${list.length||''}</span></h3>
+    <div class="body tight">${list.map(d => docRow('wo', wo, d)).join('')
+      || '<div class="empty">Nothing attached to this work order</div>'}</div>
+    ${can ? `<div class="body">
+      <button class="btn wide" onclick="docKindSheet('wo','${wo}')">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Attach a document to the work order</button>
+      <p class="hint" style="margin-top:8px">Paper that covers the whole job rather than one pole — the issued print
+        set, the blanket permit, the customer's authorization letter. Everyone on the job can read these.</p></div>` : ''}
+  </div>`;
 }
 
 /* ---------- photos by kind ---------- */
@@ -2245,22 +2620,120 @@ function viewPhoto(id, pid){
      <p class="hint" style="margin-top:8px">Uploaded by ${esc(ph.by||'—')}</p>`);
 }
 function redact(t){ return canSeeMoney() ? t : String(t||'').replace(/\$\s?[\d,]+(\.\d{1,2})?/g, '[rate]'); }
+
+/* ---------- correcting the takeoff (specialist, on the ride-out) ---------- */
+function takeoffCard(id){
+  const d = takeoffDelta(id), dropped = droppedUnits(id), can = canEditTakeoff(id);
+  if (!can && !d.any) return '';
+  return `<div class="body">
+    ${d.any ? `<p class="hint" style="margin-bottom:8px">Takeoff corrected against the print:
+      <b style="color:var(--txt)">${d.added} added</b>, <b style="color:var(--txt)">${d.dropped} dropped</b>.
+      The printed design is kept underneath — the asbuilt shows both.</p>` : ''}
+    ${dropped.length ? `<div style="margin-bottom:8px">${dropped.map(u => `<div class="itm" style="opacity:.65">
+      <div class="col"><div class="t" style="font-size:13px;text-decoration:line-through">${u.code} ${esc(u.desc)}</div>
+        <div class="s">dropped — cannot be built as drawn</div></div>
+      ${can?`<div class="r"><button class="btn sm" onclick="restoreDesignUnitUI('${id}',${u.seq})">Put back</button></div>`:''}
+    </div>`).join('')}</div>` : ''}
+    ${can ? `<button class="btn wide" onclick="addUnitSheet('${id}')">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a unit to the takeoff</button>
+      <p class="hint" style="margin-top:8px">Add what the design missed and drop what cannot be built, now — before a
+        crew rolls on it. Changing the takeoff after the build turns into a variance somebody has to defend.</p>` : ''}
+  </div>`;
+}
+/** pick a unit off the rate sheet and put it on the design takeoff */
+function addUnitSheet(id){
+  openSheet('Add a unit to the takeoff', `
+    <label class="f">Search the rate sheet</label>
+    <input id="tkq" placeholder="Code or description — pole, riser, anchor…" oninput="tkList('${id}')"
+      style="min-height:44px">
+    <div class="grid2" style="margin-top:8px">
+      <div><label class="f">Quantity</label>
+        <input id="tkqty" type="number" inputmode="decimal" step="any" min="0" value="1" style="min-height:40px"></div>
+      <div><label class="f">Why</label>
+        <input id="tkwhy" placeholder="found in the field" style="min-height:40px"></div>
+    </div>
+    <p class="hint" style="margin-top:8px">This goes on the design takeoff, not in as an adder — the crew will book it
+      like any other planned unit.</p>
+    <div id="tkres" style="margin-top:8px"></div>`);
+  tkList(id);
+}
+function tkList(id){
+  const q = (document.getElementById('tkq')||{}).value || '';
+  const box = document.getElementById('tkres'); if (!box) return;
+  const s = q.trim().toLowerCase();
+  const hits = (s ? CAT.filter(u => (u.code+' '+u.desc).toLowerCase().includes(s)) : CAT).slice(0, 40);
+  box.innerHTML = hits.map(u => `<button class="itm" onclick="addUnitPick('${id}','${esc(u.code)}')">
+    <div class="col"><div class="t" style="font-size:13px">${u.code} · ${esc(u.desc)}</div>
+      <div class="s">${u.uom||'EA'}${canSeeMoney()?` · ${money(u.rate)}`:''}</div></div>
+    <div class="r">add</div></button>`).join('')
+    || '<div class="empty">Nothing on the rate sheet matches</div>';
+}
+function addUnitPick(id, code){
+  const qty = (document.getElementById('tkqty')||{}).value || 1;
+  const why = (document.getElementById('tkwhy')||{}).value || '';
+  if (!addDesignUnit(id, code, qty, why)){ toast('That code is not on the rate sheet','bad'); return; }
+  save(); closeSheet(); renderPoint(id); drawPins();
+  toast(code + ' added to the takeoff', 'ok');
+}
+function dropUnitSheet(id, seq){
+  const u = pt(id).units.find(x => x.seq === seq) || {};
+  const design = isDesignUnit(id, seq);
+  openSheet((design?'Drop ':'Remove ') + u.code, `
+    <p class="hint">${esc(u.desc||'')}</p>
+    ${design ? `<label class="f" style="margin-top:8px">Why can it not be built as drawn? *</label>
+      <input id="dropwhy" placeholder="Pole is a class 2 · no room for the anchor · already existing"
+        style="min-height:44px">
+      <p class="hint" style="margin-top:8px">The line stays on the record, struck through, with your reason.
+        Nothing disappears off a design quietly.</p>`
+      : `<p class="hint" style="margin-top:8px">You added this line, so it comes straight off.</p>`}
+    <div style="height:10px"></div>
+    <button class="btn bad wide" onclick="doDropUnit('${id}',${seq})">${design?'Drop it from the takeoff':'Remove it'}</button>`);
+}
+function doDropUnit(id, seq){
+  const design = isDesignUnit(id, seq);
+  const why = (document.getElementById('dropwhy')||{}).value || '';
+  if (design && !why.trim()){ toast('Say why — it goes on the record','bad'); return; }
+  dropDesignUnit(id, seq, why);
+  save(); closeSheet(); renderPoint(id); drawPins();
+  toast('Takeoff updated', 'ok');
+}
+function restoreDesignUnitUI(id, seq){
+  restoreDesignUnit(id, seq); save(); renderPoint(id); drawPins();
+  toast('Put back on the takeoff', 'ok');
+}
+function setEstQty(id, seq, v){ setDesignQty(id, seq, v); save(); refreshPt(id); }
+let ptT = null;
+function refreshPt(id){ clearTimeout(ptT); ptT = setTimeout(() => { renderPoint(id); drawPins(); }, 600); }
 function unitRow(p,u,can){
   const r = rec(p.id), e = r.units[u.seq] || {};
   const stt = e.state || '', qty = e.qty ?? '';
   const cls = stt === 'complete' ? 'done' : stt === 'partial' ? 'part' : '';
   const rt = rateOf(u,e), tot = (Number(qty)||0) * rt;
+  const tk = canEditTakeoff(p.id), added = !isDesignUnit(p.id, u.seq);
+  // a specialist correcting the takeoff has no business marking work done
+  const bookable = can || !tk;
   return `<div class="u ${cls}">
     <div class="top">
       <div class="col">
-        <div class="code">${u.code}${u.spec && u.spec!=='—' ? ' · '+u.spec : ''}</div>
+        <div class="code">${u.code}${u.spec && u.spec!=='—' ? ' · '+u.spec : ''}${
+          added ? ' <span style="color:var(--acc2,#a5f3fc)">· added at pre-con</span>'
+                : (u.reEst ? ' <span style="color:var(--dim2)">· re-estimated</span>' : '')}</div>
         <div class="desc">${esc(u.desc)}</div>
         <div class="meta">est ${u.estQty} ${u.uom}${canSeeMoney()?` @ ${money(rt)}${
           e.locked ? ' <span style="color:var(--dim2)">locked at approval</span>' : ''}`:''}</div>
       </div>
       <div class="money">${canSeeMoney()?(tot?money(tot):'<span style="color:var(--dim2)">—</span>'):''}</div>
     </div>
-    <div class="ctl">
+    ${tk ? `<div class="row" style="gap:8px;margin-top:6px;align-items:center">
+      <span class="hint" style="flex:0 0 auto">Takeoff</span>
+      <input type="number" inputmode="decimal" step="any" min="0" value="${u.estQty}"
+        aria-label="Estimated quantity" style="flex:0 0 74px;min-height:34px;font-size:12.5px;text-align:center"
+        onchange="setEstQty('${p.id}',${u.seq},this.value)">
+      <span class="hint" style="flex:0 0 auto">${u.uom}</span>
+      <button class="btn sm" style="margin-left:auto;flex:0 0 auto;color:var(--bad);border-color:#4a2020"
+        onclick="dropUnitSheet('${p.id}',${u.seq})">${added?'Remove':"Can't build"}</button>
+    </div>` : ''}
+    ${bookable ? `<div class="ctl">
       <input type="number" inputmode="decimal" step="any" min="0" value="${qty}" ${can?'':'disabled'}
         aria-label="Qty today" placeholder="qty" oninput="setQty('${p.id}',${u.seq},this.value)">
       <div class="seg">
@@ -2268,7 +2741,7 @@ function unitRow(p,u,can){
         <button class="${stt==='partial'?'on y':''}" ${can?'':'disabled'} onclick="setUState('${p.id}',${u.seq},'partial')">Partial</button>
         <button class="${stt==='not'?'on r':''}" ${can?'':'disabled'} onclick="setUState('${p.id}',${u.seq},'not')">Not done</button>
       </div>
-    </div>
+    </div>` : ''}
     ${u.note ? `<div class="hint" style="margin-top:6px">Design note: ${esc(redact(u.note))}</div>` : ''}
     ${stt ? `<div class="note"><input placeholder="Memo — why partial / not done, who authorized" value="${esc(e.note||'')}"
         ${can?'':'disabled'} oninput="setUNote('${p.id}',${u.seq},this.value)"></div>` : ''}
@@ -2493,7 +2966,7 @@ function checklist(title, items, foot){
     (foot ? `<p class="hint" style="margin:8px 0 10px">${foot}</p>` : '<div style="height:8px"></div>');
 }
 function statusCard(p,r){
-  const rl = role(), id = p.id, st = ST[r.status], open = suspOpen(id), short = photoShort(id);
+  const rl = role(), id = p.id, st = ST[r.status], open = suspHard(id), short = photoShort(id);
   const A = [];   // available actions for this role at this status
   const act = (cls, label, fn, note) => A.push(`<button class="btn ${cls} wide" onclick="${fn}">${label}</button>${
     note?`<p class="hint" style="margin:6px 0 10px">${note}</p>`:'<div style="height:8px"></div>'}`);
@@ -2556,7 +3029,7 @@ function statusCard(p,r){
        prices at the schedule in force when it passed audit. Schedule changes no longer touch it.</div>`
     : `<div class="hint" style="margin-top:8px">Prices off the live rate schedule until it passes audit.</div>`) : '';
 
-  return `<div class="card"><h3><span class="grow">Stage ${st.n} of 10</span>
+  return `<div class="card"><h3><span class="grow">Stage ${st.n} of ${ORDER.length}</span>
     <span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.lbl}</span></h3>
     <div class="body">${A.join('')}${qa}${lk}</div></div>`;
 }
@@ -2591,12 +3064,31 @@ function handOff(id, to, note){
     notifyRole('pm', null, 'Invoiced', where + ' is closed out', id);
 }
 function assignCrew(id){
+  if (!guardSchedule([id])) return;
   const sel = document.getElementById('asg'); const crew = sel ? sel.value : S.crews[0];
   const r = rec(id); r.crew = crew; r.assignedAt = new Date().toISOString();
   r.status = 'assigned';
   hist(id, 'Assigned to crew ' + crew);
   save(); renderAll(); drawPins();
   handOff(id, 'assigned');
+}
+/** Material is the one thing that stops a crew rolling. Nothing else about a
+    point is allowed to reach a truck without it. */
+function guardSchedule(ids){
+  const bad = ids.filter(id => scheduleBlock(id));
+  if (!bad.length) return true;
+  closeSheet();
+  openSheet(bad.length === 1 ? 'Cannot schedule this point yet'
+                             : `${bad.length} of ${ids.length} points cannot be scheduled`,
+    `<p class="hint">A crew cannot build what is not on site.</p><div style="height:8px"></div>` +
+    bad.slice(0,12).map(id => `<button class="itm" onclick="closeSheet();go('point','${id}')">
+      <b style="width:16px;color:var(--warn)">•</b>
+      <div class="col"><div class="t" style="font-size:13px">${fullLabel(pt(id))}</div>
+        <div class="s">${esc(scheduleBlock(id))}</div></div><div class="r">›</div></button>`).join('') +
+    (bad.length > 12 ? `<p class="hint" style="margin-top:6px">+${bad.length-12} more</p>` : '') +
+    `<div style="height:10px"></div><p class="hint">Open the point and answer the material question, or leave it with
+      the specialist until the material lands. Everything else about these points is finished.</p>`);
+  return false;
 }
 /** specialist signs off the ride-out. Hard-blocked on the before photos. */
 function completePrecon(id){
@@ -2616,13 +3108,13 @@ function completePrecon(id){
   r.preconBy = role();
   hist(id, 'Pre-con complete — ' + (target === 'ready_construction'
     ? 'nothing outstanding, released to construction'
-    : suspOpen(id).map(o => o.item.lbl).join(', ') + ' still on order'));
+    : suspHard(id).map(o => o.item.lbl).join(', ') + ' still on order'));
   if (typeof routeAutoTick === 'function') routeAutoTick(id);
   save(); renderAll(); drawPins();
   toast(fullLabel(pt(id)) + ' → ' + ST[target].lbl, 'ok');
   if (target === 'ready_construction') handOff(id, 'ready_construction');
   else notifyRole('scheduler', null, 'Pre-con done, still waiting',
-    fullLabel(pt(id)) + ' — ' + suspOpen(id).map(o => o.item.lbl).join(', ') + ' on order', id);
+    fullLabel(pt(id)) + ' — ' + suspHard(id).map(o => o.item.lbl).join(', ') + ' on order', id);
 }
 
 /** scroll the point view to the card that fixes a blocker */
@@ -2711,29 +3203,7 @@ function auditFail(id){
    LIST
    ============================================================ */
 /** one row in the points-tab format — the same everywhere so it reads the same everywhere */
-function pointRow(p, o){
-  o = o || {};
-  const r = rec(p.id), x = ptTotals(p), st = ST[r.status], needs = o.needs === false ? [] : pointNeeds(p.id);
-  const onSite = openVisit(dayRec(today(), r.crew || DFRCREW)) || null;
-  const here = onSite && onSite.ptId === p.id;
-  return `<button class="itm" onclick="go('point','${p.id}')">
-    <b style="width:18px;text-align:center;color:${st.col};font-size:13px">${st.n}</b>
-    <div class="col">
-      <div class="t">${o.wo!==false?p.wo+' · ':''}${p.sec} Pt ${p.pt}
-        <span class="mono" style="color:var(--dim);font-weight:400">${p.grid}</span></div>
-      <div class="s">${st.short}${o.crew!==false&&r.crew?` · crew ${esc(r.crew)}`:''} · ${x.done}/${x.planned} units${
-        r.adders.length?` · +${r.adders.length} added`:''}${
-        canSeeMoney()&&x.total?` · ${money0(x.total)}`:''}${
-        ptMins(p.id)?` · ${fmtDur(ptMins(p.id))} on site`:''}</div>
-      ${here?`<div class="s" style="color:${ST.in_progress.ink}">on site now — ${fmtDur(visitMins(onSite))}</div>`:''}
-      ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
-      <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
-    </div>
-    <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span></div>
-  </button>`;
-}
 
-/** the Points tab is one job by default; anyone above a crew can widen it to both */
 /** one row in the points-tab format — the same everywhere so it reads the same everywhere */
 function pointRow(p, o){
   o = o || {};
@@ -2751,6 +3221,7 @@ function pointRow(p, o){
         ptMins(p.id)?` · ${fmtDur(ptMins(p.id))} on site`:''}</div>
       ${here?`<div class="s" style="color:${ST.in_progress.ink}">on site now — ${fmtDur(visitMins(onSite))}</div>`:''}
       ${needs.length?`<div class="s" style="color:var(--warn)">${needs.length===1?esc(needs[0]):needs.length+' blockers'}</div>`:''}
+      ${r.status==='ready_construction'&&scheduleBlock(p.id)?`<div class="s" style="color:var(--warn)">cannot be scheduled — ${esc(scheduleBlock(p.id))}</div>`:''}
       <div class="bar"><i style="width:${x.planned?Math.round(100*x.done/x.planned):0}%;background:${st.col}"></i></div>
     </div>
     <div class="r"><span class="st" style="background:${st.col}22;color:${st.ink};border:1px solid ${st.col}">${st.n} ${st.short}</span></div>
@@ -2761,22 +3232,32 @@ function pointRow(p, o){
 function listPool(){
   return (S.settings.allWO && role() !== 'foreman') ? PTS.slice() : jobPts();
 }
+/** a tile or chip on the Points tab setting the filter — tap the live one to clear it */
+function pickListFilter(f){
+  S.settings.filter = (S.settings.filter === f) ? 'all' : f;
+  save(); renderList(); drawPins();
+}
 function renderList(){
   const pool = listPool(), both = S.settings.allWO && role() !== 'foreman';
   const t = jobTotals();
   const g = st => pool.filter(p => rec(p.id).status === st).length;
-  document.getElementById('jobtiles').innerHTML = `
-    <div class="tile"><b>${pool.filter(p => ST[rec(p.id).status].step >= STEP_LOCKED).length}/${pool.length}</b><span>through audit</span></div>
-    <div class="tile"><b>${g('new')}</b><span>not ridden</span></div>
-    ${canSeeMoney()
+  // tiles are live — tapping one sets the filter under it
+  const jt = (f, n, lbl, col) => `<button class="tile ${S.settings.filter===f?'sel':''}"
+    onclick="pickListFilter('${f}')" aria-pressed="${S.settings.filter===f}">
+    <b${col?` style="color:${col}"`:''}>${n}</b><span>${lbl}</span></button>`;
+  document.getElementById('jobtiles').innerHTML =
+    jt('done', pool.filter(p => ST[rec(p.id).status].step >= STEP_LOCKED).length + '/' + pool.length, 'through audit')
+    + jt('new', g('new'), 'not ridden')
+    + (canSeeMoney()
       ? `<div class="tile"><b>${money0(pool.reduce((s,p)=>s+ptTotals(p).total,0))}</b><span>booked</span></div>
          <div class="tile"><b>${money0(pool.reduce((s,p)=>s+ptTotals(p).estValue,0))}</b><span>design est</span></div>`
-      : `<div class="tile"><b>${g('ready_audit')}</b><span>with the gf</span></div>
-         <div class="tile"><b>${pool.reduce((s,p)=>s+p.units.length,0)}</b><span>units on job</span></div>`}`;
+      : jt('ready_audit', g('ready_audit'), 'with the gf', ST.ready_audit.ink)
+        + `<div class="tile"><b>${pool.reduce((s,p)=>s+p.units.length,0)}</b><span>units on job</span></div>`);
 
   const counts = {}; pool.forEach(p => { const k = rec(p.id).status; counts[k] = (counts[k]||0)+1; });
   const F = [['all','All ' + pool.length]]
     .concat(ORDER.filter(k => counts[k]).map(k => [k, ST[k].n + ' ' + ST[k].short + ' ' + counts[k]]))
+    .concat(pool.some(p => matchFilter(p,'held')) ? [['held','No material ' + pool.filter(p => matchFilter(p,'held')).length]] : [])
     .concat([['photos','Has photos'],['mine','My crew']]);
   document.getElementById('listchips').innerHTML =
     (role() !== 'foreman'
@@ -2788,8 +3269,14 @@ function renderList(){
       ST[k]?`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${ST[k].col};margin-right:5px"></i>`:''}${l}</button>`).join('');
 
   const list = pool.filter(p => matchFilter(p, S.settings.filter));
+  const held = pool.filter(p => rec(p.id).status === 'ready_construction' && scheduleBlock(p.id));
   document.getElementById('ptlist').innerHTML =
-    list.map(p => pointRow(p, { wo:both })).join('') || '<div class="empty">Nothing matches this filter</div>';
+    (held.length && ['scheduler','pm','specialist','gf'].includes(role())
+      ? `<div class="card"><div class="body"><p class="hint" style="margin:0">
+          <b style="color:var(--warn)">${held.length} point${held.length===1?'':'s'} cleared but not schedulable</b> —
+          material is not on site. Everything else on them is done.</p></div></div>` : '') +
+    (list.map(p => pointRow(p, { wo:both })).join('') || '<div class="empty">Nothing matches this filter</div>') +
+    (['pm','gf','specialist'].includes(role()) ? woDocCard(S.settings.wo) : '');
 }
 function renderQA(){
   const g = st => PTS.filter(p => rec(p.id).status === st);
@@ -2810,7 +3297,7 @@ function renderQA(){
   b2.textContent = wait.length || ''; b2.className = wait.length ? 'badge' : '';
 }
 function qaItem(p){
-  const r = rec(p.id), x = ptTotals(p), short = photoShort(p.id), open = suspOpen(p.id);
+  const r = rec(p.id), x = ptTotals(p), short = photoShort(p.id), open = suspHard(p.id);
   const thumbs = r.photos.slice(0,3).map(ph => `<img src="${ph.data}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid var(--line)">`).join('');
   const sw = susp(p.id).switching;
   return `<button class="itm" onclick="go('point','${p.id}')">
@@ -2827,13 +3314,53 @@ function qaItem(p){
 
 function dayKey(d, crew){ return d + '|' + (crew || ''); }
 function dayRec(d, crew){
-  const k = dayKey(d, crew === undefined ? DFRCREW : crew);
-  if (!S.days[k]) S.days[k] = { date:d, crew:(crew === undefined ? DFRCREW : crew),
+  const c = crew === undefined ? DFRCREW : crew;
+  const k = dayKey(d, c);
+  if (!S.days[k]) S.days[k] = { date:d, crew:c,
     foreman:'', start:'', stop:'', onCrew:'', weather:'', jsa:'', clearance:'', delays:'',
-    roster:[], visits:[], startedAt:null, endedAt:null };
+    roster:standingRoster(c), visits:[], startedAt:null, endedAt:null };
   const r = S.days[k];
   r.roster = r.roster || []; r.visits = r.visits || [];
   return r;
+}
+
+/* ---------- the crew's standing roster ----------
+   A crew is the same five men and the same two machines every day. The foreman
+   sets it once; every new day starts from it. It only changes when he changes
+   it, and then it changes for every day after. */
+function standingRoster(crew){
+  S.rosters = S.rosters || {};
+  const saved = S.rosters[crew || ''];
+  if (!saved || !saved.length) return [];
+  return saved.map(x => ({ kind:x.kind, name:x.name, st:x.st || 0, ot:x.ot || 0 }));
+}
+function hasStanding(crew){
+  S.rosters = S.rosters || {};
+  return !!(S.rosters[crew || ''] || []).length;
+}
+/** remember today's crew and equipment as this crew's standing roster */
+function saveStanding(d, crew){
+  const D = dayRec(d, crew);
+  S.rosters = S.rosters || {};
+  S.rosters[crew || ''] = D.roster.map(x => ({ kind:x.kind, name:x.name, st:x.st || 0, ot:x.ot || 0 }));
+  save();
+  toast(`Crew ${crew||''} saved — it loads itself from now on`, 'ok');
+  renderTime();
+}
+function clearStanding(crew){
+  S.rosters = S.rosters || {};
+  delete S.rosters[crew || ''];
+  save(); renderTime();
+  toast('Standing crew cleared');
+}
+/** pull the standing roster onto a day that has none (or replace what is there) */
+function loadStanding(d, crew){
+  const D = dayRec(d, crew), saved = standingRoster(crew);
+  if (!saved.length){ toast('No standing crew saved yet','bad'); return; }
+  D.roster = saved;
+  fillRosterHours(D);
+  save(); renderTime();
+  toast('Crew loaded', 'ok');
 }
 let DFRDATE = today(), DFRCREW = null;
 
@@ -2873,8 +3400,9 @@ function startDay(){
   D.startedAt = new Date().toISOString();
   D.start = clock(D.startedAt);
   if (!D.foreman) D.foreman = S.settings.foreman || '';
+  if (!D.roster.length && hasStanding(D.crew)) D.roster = standingRoster(D.crew);
   if (!D.roster.length) toast('Clock running — now add who is with you', 'ok');
-  else toast('Day started ' + clock(D.startedAt), 'ok');
+  else toast(`Day started ${clock(D.startedAt)} · crew ${D.crew||''} loaded`, 'ok');
   save(); renderTime();
 }
 function endDay(){
@@ -3028,6 +3556,12 @@ function renderTime(){
         <button class="btn" onclick="rosterSheet('${d}','Equipment')">Add machine</button></div>
       ${total ? `<button class="btn wide" style="margin-top:8px" onclick="(()=>{fillRosterHours(dayRec('${d}'));save();renderTime();toast('Hours set from the clock','ok')})()">
         Set everyone's hours from the clock (${(Math.round(total/15)/4).toFixed(2)} h)</button>` : ''}
+      ${hasStanding(D.crew) ? `<p class="hint" style="margin-top:8px">
+        <b style="color:var(--ok,#6ee7b7)">Crew ${esc(D.crew||'')} is saved.</b> It loads itself every morning —
+        you only touch this when the crew actually changes. Hours are still per day.
+        ${D.roster.length ? '' : `<button class="btn sm" style="margin-left:6px" onclick="loadStanding('${d}','${esc(D.crew||'')}')">Load it now</button>`}</p>`
+      : D.roster.length ? `<p class="hint" style="margin-top:8px">This becomes crew ${esc(D.crew||'')}'s standing crew —
+        tomorrow it loads itself. <button class="btn sm" style="margin-left:6px" onclick="saveStanding('${d}','${esc(D.crew||'')}')">Save it now</button></p>` : ''}
       <p class="hint" style="margin-top:8px">Hours here are the timesheet${canSeeMargin()?' and the cost side of margin':''}.
         They are not billed to Tampa Electric unless the same hours are also logged as T&amp;E against a work point.</p>
     </div></div>
@@ -3088,7 +3622,16 @@ function renderTime(){
   <div style="height:14px"></div>`;
 }
 function setRoster(d,i,k,v){ dayRec(d).roster[i][k] = v; save(); refreshTime(); }
-function delRoster(d,i){ dayRec(d).roster.splice(i,1); save(); renderTime(); }
+function delRoster(d,i){ dayRec(d).roster.splice(i,1); syncStanding(d); save(); renderTime(); }
+/** Who is on the crew is a standing fact, not a daily one — so any add or
+    remove writes straight through to the crew's standing roster. Hours stay
+    daily. The foreman never re-enters the same five men again. */
+function syncStanding(d, crew){
+  const c = crew === undefined ? DFRCREW : crew;
+  const D = dayRec(d, c);
+  S.rosters = S.rosters || {};
+  S.rosters[c || ''] = D.roster.map(x => ({ kind:x.kind, name:x.name, st:0, ot:0 }));
+}
 let timeT = null;
 function refreshTime(){ clearTimeout(timeT); timeT = setTimeout(renderTime, 700); }
 function rosterSheet(d, kind){
@@ -3102,6 +3645,7 @@ function pickRoster(d, kind, i){
   const D = dayRec(d);
   const hrs = dayMins(D) ? Math.round(dayMins(D)/15)/4 : 8;
   D.roster.push({ kind, name:x.name, st:Math.min(8,hrs), ot:Math.max(0,+(hrs-8).toFixed(2)) });
+  syncStanding(d);
   save(); closeSheet(); renderTime();
 }
 function dayRows(d, wo, crew){
@@ -3295,6 +3839,97 @@ function dayDetail(d){
       <div class="r" style="color:var(--txt);font-weight:700">${money(r.v)}</div></div>`).join('')
     || '<div class="empty">Nothing booked that day</div>');
 }
+/* ---------- invoiced work, for the biller ----------
+   One row per billable line on every point that has been invoiced, so the CSV
+   drops straight into the accounting package instead of being retyped. */
+function invoicedRows(){
+  const rows = [];
+  PTS.forEach(p => {
+    const r = rec(p.id);
+    if (r.status !== 'complete') return;
+    const inv = (r.hist || []).filter(h => /invoiced/i.test(h.what)).slice(-1)[0];
+    const invDate = (inv ? inv.ts : r.qa && r.qa.at ? r.qa.at : '').slice(0,10);
+    const base = { wo:p.wo, sec:p.sec, pt:p.pt, grid:p.grid, crew:r.crew || '',
+      audited:(r.qa && r.qa.at ? r.qa.at.slice(0,10) : ''), invoiced:invDate };
+    p.units.forEach(u => {
+      const e = r.units[u.seq] || {};
+      const q = Number(e.qty) || 0; if (!q) return;
+      rows.push(Object.assign({}, base, { type:'Planned unit', code:u.code, desc:u.desc,
+        uom:u.uom, date:e.date || '', qty:q, rate:rateOf(u,e), amount:q * rateOf(u,e),
+        note:e.note || '' }));
+    });
+    r.adders.forEach(a => {
+      const q = Number(a.qty) || 0; if (!q) return;
+      rows.push(Object.assign({}, base, { type:'Added unit', code:a.code, desc:a.desc,
+        uom:a.uom || 'EA', date:a.date || '', qty:q, rate:adderRate(a), amount:q * adderRate(a),
+        note:a.note || '' }));
+    });
+    r.te.forEach(x => {
+      const v = teValue(x); if (!v) return;
+      rows.push(Object.assign({}, base, { type:'T&E ' + (x.kind || 'Labor'), code:'', desc:x.name,
+        uom:'HR', date:x.date || '', qty:(Number(x.st)||0) + (Number(x.ot)||0),
+        rate:teRateST(x), amount:v,
+        note:`${x.st||0} ST @ ${money(teRateST(x))} / ${x.ot||0} OT @ ${money(teRateOT(x))}` }));
+    });
+  });
+  return rows;
+}
+function csvCell(v){
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+function exportInvoicedCSV(){
+  const rows = invoicedRows();
+  if (!rows.length){ toast('Nothing has been invoiced yet','bad'); return; }
+  const cols = ['wo','sec','pt','grid','crew','type','code','desc','uom','date','qty','rate','amount','audited','invoiced','note'];
+  const head = ['Work order','Section','Point','Grid ID','Crew','Line type','Unit code','Description','UOM',
+                'Work date','Qty','Rate','Amount','Audit passed','Invoiced','Memo'];
+  const tot = rows.reduce((s,r) => s + r.amount, 0);
+  const body = rows.map(r => cols.map(c =>
+    csvCell(c === 'rate' || c === 'amount' ? (+r[c]).toFixed(2) : r[c])).join(','));
+  body.push(cols.map((c,i) => i === 0 ? 'TOTAL' : c === 'amount' ? tot.toFixed(2) : '').join(','));
+  const blob = new Blob([head.join(',') + '\n' + body.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `CPE_invoiced_${today()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`${rows.length} invoiced line${rows.length===1?'':'s'} exported`, 'ok');
+}
+/** the same shape, for what has passed audit but is not billed yet */
+function exportToInvoiceCSV(){
+  const ready = PTS.filter(p => rec(p.id).status === 'ready_invoice');
+  if (!ready.length){ toast('Nothing is waiting to invoice','bad'); return; }
+  const rows = [];
+  ready.forEach(p => {
+    const r = rec(p.id);
+    const base = { wo:p.wo, sec:p.sec, pt:p.pt, grid:p.grid, crew:r.crew || '',
+      audited:(r.qa && r.qa.at ? r.qa.at.slice(0,10) : ''), invoiced:'' };
+    p.units.forEach(u => { const e = r.units[u.seq] || {}; const q = Number(e.qty)||0; if (!q) return;
+      rows.push(Object.assign({}, base, { type:'Planned unit', code:u.code, desc:u.desc, uom:u.uom,
+        date:e.date||'', qty:q, rate:rateOf(u,e), amount:q*rateOf(u,e), note:e.note||'' })); });
+    r.adders.forEach(a => { const q = Number(a.qty)||0; if (!q) return;
+      rows.push(Object.assign({}, base, { type:'Added unit', code:a.code, desc:a.desc, uom:a.uom||'EA',
+        date:a.date||'', qty:q, rate:adderRate(a), amount:q*adderRate(a), note:a.note||'' })); });
+    r.te.forEach(x => { const v = teValue(x); if (!v) return;
+      rows.push(Object.assign({}, base, { type:'T&E ' + (x.kind||'Labor'), code:'', desc:x.name, uom:'HR',
+        date:x.date||'', qty:(Number(x.st)||0)+(Number(x.ot)||0), rate:teRateST(x), amount:v,
+        note:`${x.st||0} ST / ${x.ot||0} OT` })); });
+  });
+  const cols = ['wo','sec','pt','grid','crew','type','code','desc','uom','date','qty','rate','amount','audited','invoiced','note'];
+  const head = ['Work order','Section','Point','Grid ID','Crew','Line type','Unit code','Description','UOM',
+                'Work date','Qty','Rate','Amount','Audit passed','Invoiced','Memo'];
+  const tot = rows.reduce((s,r) => s + r.amount, 0);
+  const body = rows.map(r => cols.map(c =>
+    csvCell(c === 'rate' || c === 'amount' ? (+r[c]).toFixed(2) : r[c])).join(','));
+  body.push(cols.map((c,i) => i === 0 ? 'TOTAL' : c === 'amount' ? tot.toFixed(2) : '').join(','));
+  const blob = new Blob([head.join(',') + '\n' + body.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `CPE_to_invoice_${today()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`${rows.length} line${rows.length===1?'':'s'} ready to bill exported`, 'ok');
+}
+
 function exportRevenueCSV(){
   const days = revenueByDay(SCOPE);
   const head = 'Date,Planned units,Added units,T&E labor,T&E equipment,Day total\n';
@@ -3427,7 +4062,16 @@ function crewDayCost(date, crew){
   if (c.cost) return { cost:c.cost, gf:c.gf, estimated:c.estimated };
   return { cost:stdCrewDayCost(date), gf:gfShare(date), estimated:true, standard:true };
 }
-function targetMargin(){ const m = +(S.cost.targetMargin); return isFinite(m) ? m : 0.15; }
+function targetMargin(){ const m = +(S.cost.targetMargin); return isFinite(m) ? m : 0; }
+function workdays(){ const n = +(S.cost.workdays); return n > 0 ? n : 5; }
+/** Monday to Friday of the week containing a date */
+function weekDates(date){
+  const d = new Date((date || today()) + 'T12:00:00');
+  const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const out = [];
+  for (let i = 0; i < workdays(); i++){ const x = new Date(mon); x.setDate(mon.getDate()+i); out.push(x.toISOString().slice(0,10)); }
+  return out;
+}
 /** revenue booked on one date against points belonging to one crew */
 function crewRevenue(date, crew){
   let v = 0;
@@ -3441,32 +4085,85 @@ function crewRevenue(date, crew){
   });
   return v;
 }
+/** the value still sitting on a crew — what they have left to build, at design estimate */
+function crewQueue(crew){
+  let v = 0, n = 0;
+  PTS.forEach(p => {
+    const r = rec(p.id), st = ST[r.status].step;
+    if ((r.crew||'') !== crew) return;
+    if (st < STEP_BUILD || st >= STEP_AUDIT) return;           // only work they can still book
+    const t = ptTotals(p);
+    v += Math.max(0, t.estValue - t.total);                     // what is left of it
+    n++;
+  });
+  return { value:v, points:n };
+}
+/** the week for one crew: what a full week costs, what they have booked, what is still on them,
+    and — the scheduler's actual question — how much more work they need to fill it. */
+function crewWeek(crew, date){
+  const days = weekDates(date), td = today();
+  const dayC = crewDayCost(td, crew);
+  const perDay = dayC.cost;
+  const target = perDay * workdays() * (1 + targetMargin());
+  const booked = days.reduce((s,d) => s + crewRevenue(d, crew), 0);
+  const q = crewQueue(crew);
+  const covered = booked + q.value;
+  const short = Math.max(0, target - covered);
+  // what a point has been worth on this job, to turn a shortfall into a number of poles
+  const pool = PTS.filter(p => ST[rec(p.id).status].step >= ST.ready_construction.step
+                            && ST[rec(p.id).status].step < STEP_AUDIT);
+  const avg = pool.length ? pool.reduce((s,p) => s + ptTotals(p).estValue, 0) / pool.length
+                          : (PTS.reduce((s,p) => s + ptTotals(p).estValue, 0) / (PTS.length||1));
+  return { days, perDay, target, booked, queue:q.value, queuePts:q.points, covered, short,
+           dayCost:dayC, estimated:dayC.estimated, standard:dayC.standard,
+           daysCovered: perDay ? covered/perDay : 0,
+           daysShort:  perDay ? short/perDay : 0,
+           bookedDays: perDay ? booked/perDay : 0,
+           pointsNeeded: avg ? Math.ceil(short/avg) : 0,
+           pct: target ? Math.min(100, covered/target*100) : 0,
+           bookedPct: target ? Math.min(100, booked/target*100) : 0,
+           full: covered >= target && target > 0 };
+}
 function crewDay(date, crew){
   const c = crewDayCost(date, crew);
   const target = c.cost * (1 + targetMargin());
   const rev = crewRevenue(date, crew);
+  const q = crewQueue(crew);
   const raw = target ? rev/target*100 : 0;
+  const loadRaw = target ? (rev + q.value)/target*100 : 0;
   return { cost:c.cost, gf:c.gf||0, estimated:c.estimated, standard:c.standard, target,
-           rev, pct:Math.min(100, raw), raw, over: rev - target };
+           rev, pct:Math.min(100, raw), raw, over: rev - target,
+           queue:q.value, queuePts:q.points, load:Math.min(100, loadRaw), loadRaw };
 }
-/** The fill bar. Only the PM sees the cost behind it; the scheduler sees percentages alone. */
-function crewBar(d){
-  const full = d.rev >= d.target && d.target > 0;
-  const pct = Math.round(d.pct), raw = Math.round(d.raw);
-  const left = canSeeMoney()
-    ? (full ? `Covered — ${money0(d.rev)} booked${d.over>1?`, ${money0(d.over)} past the mark`:''}`
-            : `${money0(d.rev)} of ${money0(d.target)} · ${pct}%`)
-    : (full ? `Covered — ${raw}% of today's target`
-            : raw ? `${raw}% of today's target` : 'Nothing booked yet today');
-  return `<div class="meter ${full?'full':''}"><i style="width:${pct}%"></i></div>
+/** The week meter. Pale = everything on the crew, solid = what they have booked so far.
+    A full bar is a full week of work. The scheduler's job is filling the pale bar. */
+function crewBar(crew, date){
+  const w = crewWeek(crew, date), d = crewDay(date || today(), crew);
+  const money = canSeeMoney();
+  const dc = w.daysCovered, ds = w.daysShort;
+  const headline = w.full
+    ? `Week is full — ${dc.toFixed(1)} crew-days of work on them`
+    : `${dc.toFixed(1)} of ${workdays()} crew-days covered`;
+  const ask = w.full
+    ? `${w.queuePts} point${w.queuePts===1?'':'s'} still to build`
+    : `<b style="color:#fbbf24">${ds.toFixed(1)} day${ds.toFixed(1)==='1.0'?'':'s'} short${
+        w.pointsNeeded?` — roughly ${w.pointsNeeded} more work point${w.pointsNeeded===1?'':'s'}`:''}</b>`;
+  return `<div class="meter ${w.full?'full':''}">
+      <i class="plan" style="width:${Math.round(w.pct)}%"></i>
+      <i class="act" style="width:${Math.round(w.bookedPct)}%"></i>
+    </div>
     <div class="row" style="margin-top:5px">
-      <span class="hint" style="${full?'color:#6ee7b7;font-weight:700':''}">${left}</span>
+      <span class="hint" style="${w.full?'color:#6ee7b7;font-weight:700':''}">${headline}</span>
       <span class="col hint" style="text-align:right">${
         canSeeMargin()
-          ? `day costs ${money0(d.cost)}${d.gf?` incl. ${money0(d.gf)} GF`:''}${
-              d.standard?' (standard day)':d.estimated?' (est)':''} + ${Math.round(targetMargin()*100)}%`
-          : `full bar = the day + ${Math.round(targetMargin()*100)}%`}</span>
-    </div>`;
+          ? `week costs ${money0(w.target)} · ${money0(w.perDay)}/day${
+              w.standard?' (standard)':w.estimated?' (est)':''}`
+          : `full bar = ${workdays()} days of work`}</span>
+    </div>
+    <div class="hint" style="margin-top:4px">${ask}${
+      money ? ` · ${money0(w.booked)} booked, ${money0(w.queue)} still on them` : ''}</div>
+    <div class="hint" style="margin-top:2px;color:var(--dim2)">Today ${Math.round(d.raw)}% of a day${
+      money ? ` · ${money0(d.rev)}` : ''}</div>`;
 }
 
 /* ---------- crew attribution ---------- */
@@ -3558,45 +4255,99 @@ function specialistHome(){
   const notRidden = PTS.filter(p => rec(p.id).status === 'new');
   const pend      = PTS.filter(p => rec(p.id).status === 'pending_suspense');
   const ready     = PTS.filter(p => rec(p.id).status === 'ready_construction');
+  const past      = PTS.filter(p => ST[rec(p.id).status].step > STEP_PRECON);
+  const held      = ready.filter(p => scheduleBlock(p.id));
+  /* what each pending point is actually waiting on */
   const byItem = {};
-  SUSP.forEach(s2 => byItem[s2.k] = pend.filter(p => {
+  /* only points he has already signed off — a not-ridden point's questions are
+     part of the ride-out, and it is already on the Not ridden list */
+  const signed = PTS.filter(p => ['pending_suspense','ready_construction'].includes(rec(p.id).status));
+  SUSP.forEach(s2 => byItem[s2.k] = signed.filter(p => {
     const v = susp(p.id)[s2.k];
-    return v.needed == null || (v.needed && s2.required.some(f => !String(v[f]||'').trim()));
+    if (s2.avail) return v.needed !== true;
+    return v.needed == null
+      || (v.needed && (s2.required.some(f => !String(v[f]||'').trim())
+                       || (s2.doc && !docsOf(p.id, s2.doc).length)
+                       || (s2.photo && !photosOf(p.id, s2.photo).length)));
   }));
+
+  const cur = homeView('specialist', 'ride');
+  const tile = (k, n, lbl, col) => `<button class="tile ${cur===k?'sel':''}"
+    onclick="setHomeView('specialist','${k}')" aria-pressed="${cur===k}">
+    <b${col?` style="color:${col}"`:''}>${n}</b><span>${lbl}</span></button>`;
+
+  const why = p => {
+    const o = suspOpen(p.id);
+    if (!o.length) return 'clear';
+    return o.map(x => x.item.lbl.toLowerCase() + ' — ' + x.why).join(' · ');
+  };
+
+  const body =
+    cur === 'ride' ? `
+      ${routeCard('precon')}
+      ${notRidden.length
+        ? homeList(notRidden.slice(0,60), 'Nothing left to ride out', { needs:true })
+          + (notRidden.length > 60 ? `<p class="hint">+ ${notRidden.length-60} more — work the route</p>` : '')
+        : `<div class="card"><div class="body"><p class="hint" style="margin:0">Every point has been ridden out.
+            ${pend.length?`${pend.length} still waiting on something — tap <b>Pending items</b>.`:''}</p></div></div>`}`
+
+    : cur === 'susp' ? `
+      ${SUSP.map(s2 => byItem[s2.k].length ? card(
+          s2.avail ? 'Waiting on material' : s2.lbl + ' outstanding',
+          byItem[s2.k].length,
+          byItem[s2.k].slice(0,20).map(p => { const v = susp(p.id)[s2.k];
+            let note;
+            if (s2.avail) note = v.needed == null ? 'Not answered yet'
+                 : ('not on site' + (String(v.eta||'').trim() ? ' — expected ' + v.eta : ''));
+            else if (v.needed == null) note = 'Not answered yet';
+            else {
+              const miss = s2.required.filter(f => !String(v[f]||'').trim())
+                .map(f => (s2.fields.find(x => x.f === f)||{}).lbl + ' missing');
+              if (s2.doc && !docsOf(p.id, s2.doc).length) miss.push('customer approval not attached');
+              if (s2.photo && !photosOf(p.id, s2.photo).length) miss.push('response not attached');
+              note = miss.join(', ');
+            }
+            return ptItem(p, note); }).join(''),
+          s2.k === 'switching' ? 'The number itself gets typed in by the foreman at the pole — you just order it.'
+          : s2.k === 'change'  ? 'A date is not enough — the customer approval document has to be attached before this clears.'
+          : s2.avail           ? 'These do not hold with you for paperwork. They hold because no crew can be sent until material is on site.'
+          : '') : '').join('')
+      || `<div class="card"><div class="body"><p class="hint" style="margin:0">Nothing outstanding. Every question on
+           every point you have ridden out is answered and back.</p></div></div>`}`
+
+    : cur === 'ready' ? `
+      ${held.length ? `<div class="card"><div class="body"><p class="hint" style="margin:0">
+        <b style="color:var(--warn)">${held.length} of these cannot be scheduled yet</b> — material is not on site.
+        Everything else on them is finished. Mark material available and the scheduler can take them.</p></div></div>` : ''}
+      ${homeList(ready, 'Nothing waiting on a crew', { needs:false })}
+      <div class="card"><div class="body"><p class="hint" style="margin:0">Nothing for you to do on the clear ones.
+        The scheduler assigns the crew — until they do, no foreman can open them.</p></div></div>`
+
+    : `
+      ${homeList(past.slice(0,60), 'Nothing has left pre-con yet', { needs:false })}
+      ${past.length > 60 ? `<p class="hint">+ ${past.length-60} more</p>` : ''}
+      <div class="card"><div class="body"><p class="hint" style="margin:0">Read-only. These are with a crew, the GF or
+        billing now. Open one if you need to see what was built against what you rode out.</p></div></div>`;
+
   return `
   <div class="card"><div class="body">
     <div class="hint">${greet()} · Construction specialist · ${new Date().toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'})}</div>
     <div style="font-size:28px;font-weight:800;line-height:1.15;margin-top:3px">${notRidden.length}</div>
     <div class="hint">point${notRidden.length===1?'':'s'} still to ride out${pend.length?` · ${pend.length} waiting on something`:''}</div>
-    <p class="hint" style="margin-top:8px">Shoot the before photos and answer the three questions at each pole. The point
-      moves itself — clear goes straight to Ready for construction, anything ordered goes to Pending suspense items and
-      releases the moment it comes back.</p>
+    <p class="hint" style="margin-top:8px">Shoot the before photos, answer the ${SUSP.length} questions and correct the
+      takeoff at each pole. The point moves itself — clear goes straight to Ready for construction, anything ordered
+      goes to Pending suspense items and releases the moment it comes back.</p>
   </div></div>
 
   <div class="tiles">
-    <div class="tile"><b>${notRidden.length}</b><span>not ridden</span></div>
-    <div class="tile"><b style="color:${ST.pending_suspense.ink}">${pend.length}</b><span>pending items</span></div>
-    <div class="tile"><b style="color:${ST.ready_construction.ink}">${ready.length}</b><span>ready to build</span></div>
-    <div class="tile"><b>${PTS.filter(p => ST[rec(p.id).status].step > STEP_PRECON).length}</b><span>past pre-con</span></div>
+    ${tile('ride',  notRidden.length, 'not ridden')}
+    ${tile('susp',  pend.length,      'pending items', ST.pending_suspense.ink)}
+    ${tile('ready', ready.length,     'ready to build', ST.ready_construction.ink)}
+    ${tile('past',  past.length,      'past pre-con')}
   </div>
-  <div style="height:10px"></div>
+  <p class="hint" style="margin:6px 0 10px">Tap a tile to work that list.</p>
 
-  ${routeCard('precon')}
-
-  ${SUSP.map(s2 => byItem[s2.k].length ? card(s2.lbl + ' outstanding', byItem[s2.k].length,
-      byItem[s2.k].map(p => { const v = susp(p.id)[s2.k];
-        return ptItem(p, v.needed == null ? 'Not answered yet'
-          : s2.required.filter(f => !String(v[f]||'').trim())
-              .map(f => (s2.fields.find(x => x.f === f)||{}).lbl + ' missing').join(', ')); }).join(''),
-      s2.k === 'switching' ? 'The number itself gets typed in by the foreman at the pole — you just order it.' : '') : '').join('')}
-
-  ${notRidden.length ? card('Not ridden out yet', notRidden.length,
-      notRidden.slice(0,25).map(p => ptItem(p, `${ptTotals(p).planned} planned units · no before photos`)).join('')
-      + (notRidden.length > 25 ? `<div class="itm"><div class="col"><div class="s">+ ${notRidden.length-25} more — use the route</div></div></div>` : '')) : ''}
-
-  ${ready.length ? card('Released — waiting on a crew', ready.length,
-      ready.slice(0,12).map(p => ptItem(p, 'Clear · nobody assigned yet')).join(''),
-      'Nothing for you to do on these. The office assigns the crew — until they do, no foreman can open them.') : ''}
+  ${body}
 
   <div class="btnrow"><button class="btn" onclick="go('map')">Map</button>
     <button class="btn" onclick="go('list')">All points</button></div>
@@ -3633,7 +4384,7 @@ function foremanHome(){
     { k:'all',    lbl:'Everything', n:mine.length },
     { k:'corr',   lbl:'Correction', n:corr.length || null, col:corr.length?ST.correction.col:null },
     { k:'assign', lbl:'New on me',  n:assign.length || null },
-    { k:'build',  lbl:'Building',   n:build.length || null },
+    { k:'build',  lbl:'In progress', n:build.length || null },
     { k:'short',  lbl:'Photos short', n:short.length || null },
     { k:'audit',  lbl:'With the GF', n:audit.length || null }
   ].filter(s => s.k === 'all' || s.n).concat([{ k:'route', lbl:'Route' }]);
@@ -3742,7 +4493,7 @@ function schedulerHome(){
         <button class="btn pri wide" style="margin-top:10px" onclick="bulkAssignSheet()">Schedule — by section or all of it</button>
       </div></div>` : ''}
       ${homeList(toSched, 'Nothing cleared and waiting', { crew:false, needs:false })}`
-    : cur === 'crews' ? `<h3 class="sect">Today's crews</h3>${S.crews.map(c => crewCard(c, td)).join('')}`
+    : cur === 'crews' ? `<h3 class="sect">This week by crew</h3>${S.crews.map(c => crewCard(c, td)).join('')}`
     : cur === 'out' ? homeList(out, 'Nothing out with a crew', {})
     : homeList(waiting, 'Nothing waiting on suspense items', { crew:false });
   return `
@@ -3752,6 +4503,12 @@ function schedulerHome(){
       toSched.length?ST.ready_construction.ink:'var(--txt)'}">${toSched.length}</div>
     <div class="hint">ready to schedule${out.length?` · ${out.length} out with crews`:''}${
       waiting.length?` · ${waiting.length} still in pre-con`:''}</div>
+    ${(() => { const shortCrews = S.crews.map(c => ({ c, w:crewWeek(c, td) })).filter(x => !x.w.full);
+      if (!shortCrews.length) return `<p class="hint" style="margin-top:8px;color:#6ee7b7">
+        Every crew has a full week of work on them.</p>`;
+      return `<p class="hint" style="margin-top:8px">${shortCrews.map(x =>
+        `Crew ${x.c} is <b style="color:#fbbf24">${x.w.daysShort.toFixed(1)} day${x.w.daysShort.toFixed(1)==='1.0'?'':'s'} short</b>${
+        x.w.pointsNeeded?` (~${x.w.pointsNeeded} points)`:''}`).join(' · ')}</p>`; })()}
   </div></div>
 
   ${homeChips('scheduler', sets, cur)}
@@ -3768,7 +4525,8 @@ function billingHome(){
   const sets = [
     { k:'bill', lbl:'To invoice', n:toBill.length, col:toBill.length?ST.ready_invoice.col:null },
     { k:'asb',  lbl:'Asbuilts' },
-    { k:'done', lbl:'Invoiced', n:billed.length || null }
+    { k:'done', lbl:'Invoiced', n:billed.length || null },
+    { k:'csv',  lbl:'Export' }
   ];
   const cur = homeView('billing', 'bill');
   const body =
@@ -3785,7 +4543,14 @@ function billingHome(){
       </div></div>
       ${homeList(toBill, 'Nothing waiting to invoice', { needs:false })}`
     : cur === 'asb' ? asbuiltCard()
-    : homeList(billed.slice(0,40), 'Nothing invoiced yet', { needs:false });
+    : cur === 'csv' ? billingCSVCard()
+    : `<div class="card"><div class="body">
+        <div style="font-size:28px;font-weight:800;line-height:1.15">${money0(billed.reduce((s,p)=>s+ptTotals(p).total,0))}</div>
+        <div class="hint">invoiced · ${billed.length} point${billed.length===1?'':'s'}</div>
+        <div class="btnrow" style="margin-top:10px">
+          <button class="btn pri" onclick="exportInvoicedCSV()">Download invoiced CSV</button></div>
+      </div></div>
+      ${homeList(billed.slice(0,40), 'Nothing invoiced yet', { needs:false })}`;
   return `
   <div class="card"><div class="body">
     <div class="hint">${greet()} · Billing · ${new Date().toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>
@@ -3804,9 +4569,51 @@ function billingHome(){
   <div style="height:14px"></div>`;
 }
 
+/** the biller's export drawer — one row per billable line, ready to key or import */
+function billingCSVCard(){
+  const inv = invoicedRows();
+  const invPts = PTS.filter(p => rec(p.id).status === 'complete');
+  const ready = PTS.filter(p => rec(p.id).status === 'ready_invoice');
+  const invTot = inv.reduce((s,r) => s + r.amount, 0);
+  const readyTot = ready.reduce((s,p) => s + ptTotals(p).total, 0);
+  return `<div class="card">
+    <h3><span class="grow">Invoiced work</span><span>${money0(invTot)}</span></h3>
+    <div class="body">
+      <div class="row" style="gap:16px">
+        <div><div style="font-size:22px;font-weight:800;line-height:1.1">${inv.length}</div>
+          <div class="hint">billable lines</div></div>
+        <div><div style="font-size:22px;font-weight:800;line-height:1.1">${invPts.length}</div>
+          <div class="hint">points invoiced</div></div>
+      </div>
+      <button class="btn pri wide" style="margin-top:10px" onclick="exportInvoicedCSV()">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>Download invoiced CSV</button>
+      <p class="hint" style="margin-top:8px">One row per line — planned units, adders and T&amp;E — with the work order,
+        section, point, grid ID, crew, work date, quantity, the locked rate and the amount. Audit and invoice dates on
+        every row, and a TOTAL line at the bottom. Opens straight in Excel.</p>
+    </div></div>
+
+  <div class="card">
+    <h3><span class="grow">Passed audit, not yet billed</span><span>${money0(readyTot)}</span></h3>
+    <div class="body">
+      <div style="font-size:22px;font-weight:800;line-height:1.1;color:${ST.ready_invoice.ink}">${ready.length}</div>
+      <div class="hint">point${ready.length===1?'':'s'} waiting</div>
+      <button class="btn wide" style="margin-top:10px" onclick="exportToInvoiceCSV()">Download what is ready to bill</button>
+      <p class="hint" style="margin-top:8px">Same columns, so you can build the invoice from this file and then export
+        the invoiced version as the record of what went out.</p>
+    </div></div>
+
+  <div class="card">
+    <h3>Whole-job revenue</h3>
+    <div class="body">
+      <button class="btn wide" onclick="exportRevenueCSV()">Download revenue by day</button>
+      <p class="hint" style="margin-top:8px">Every day on the job, split into planned units, added units, T&amp;E labor
+        and T&amp;E equipment — regardless of stage. Useful for a WIP schedule, not for an invoice.</p>
+    </div></div>`;
+}
+
 /** one crew, what they have on, and whether today pays for itself */
 function crewCard(crew, date){
-  const D = dayRec(date, crew), d = crewDay(date, crew);
+  const D = dayRec(date, crew), w = crewWeek(crew, date);
   const mine = PTS.filter(p => rec(p.id).crew === crew);
   const active = mine.filter(p => { const st = ST[rec(p.id).status].step; return st >= STEP_BUILD && st < STEP_AUDIT; });
   const audit = mine.filter(p => rec(p.id).status === 'ready_audit');
@@ -3815,15 +4622,16 @@ function crewCard(crew, date){
   return `<div class="card">
     <h3><span class="grow">Crew ${esc(crew)}${D.foreman?` · ${esc(D.foreman)}`:''}</span>
       <span class="hint" style="text-transform:none;letter-spacing:0">${
-        running ? fmtDur(dayMins(D)) + ' on the clock' : D.endedAt ? 'day closed' : 'not started'}</span></h3>
+        w.full ? 'week full' : w.daysShort.toFixed(1) + 'd short'}</span></h3>
     <div class="body">
-      ${crewBar(d)}
+      ${crewBar(crew, date)}
       <div class="row" style="margin-top:10px;gap:14px">
         <span class="hint"><b style="color:var(--txt)">${active.length}</b> assigned</span>
         <span class="hint"><b style="color:var(--txt)">${todayPts.length}</b> touched today</span>
         <span class="hint"><b style="color:var(--txt)">${audit.length}</b> at audit</span>
         <span class="col"></span>
-        ${active.length ? `<button class="btn sm" onclick="moveAllSheet('${crew}')">Move work</button>` : ''}
+        ${!w.full ? `<button class="btn sm pri" onclick="setHomeView('${role()}','sched')">Add work</button>` : ''}
+        ${active.length ? `<button class="btn sm" onclick="moveAllSheet('${crew}')">Move</button>` : ''}
       </div>
     </div>
     <div class="body tight">${active.length ? active.map(p => {
@@ -4595,7 +5403,7 @@ function routeCard(defaultKind){
       <div class="bar" style="margin-top:10px"><i style="width:${Math.round(100*R.done.length/R.ids.length)}%;background:#eab308"></i></div>
     </div>
     <div class="body tight">${R.ids.map((id,i) => {
-      const p = pt(id), done = R.done.includes(id), open = suspOpen(id).length;
+      const p = pt(id), done = R.done.includes(id), open = suspHard(id).length;
       return `<div class="itm" style="opacity:${done?.55:1}">
         <b style="width:20px;text-align:center;color:${done?'var(--ok)':'#eab308'};font-size:13px">${done?'✓':i+1}</b>
         <div class="col" onclick="go('point','${id}')" style="cursor:pointer">
@@ -4702,10 +5510,59 @@ function ptSection(p, brk){
       ${ptMins(p.id)?`<b>Time on site</b><span>${fmtDur(ptMins(p.id))} over ${ptVisits(p.id).length} visit${ptVisits(p.id).length===1?'':'s'}</span>`:''}
       ${r.notes?`<b>Field notes</b><span>${esc(r.notes)}</span>`:''}
     </div>
+    ${suspTable(p.id)}
     ${rows.length?unitTable(rows, t.total):'<p style="font-size:10px;color:#777">Nothing recorded.</p>'}
+    ${takeoffTable(p.id)}
+    ${docTable(p.id)}
     ${timeTable(p.id)}
     ${notesTable(p.id)}
     ${photoBlock(p)}</div>`;
+}
+/* what was asked and answered on the ride-out — the audit trail a TECO
+   reviewer actually wants to see next to the units */
+function suspTable(id){
+  const sp = susp(id);
+  const rows = SUSP.map(s => {
+    const v = sp[s.k];
+    const ans = v.needed == null ? 'not answered' : (v.needed ? 'Yes' : 'No');
+    const det = s.fields.map(f => String(v[f.f]||'').trim() ? f.lbl + ': ' + esc(v[f.f]) : '')
+                  .filter(Boolean).join(' · ');
+    return `<tr><td>${s.lbl}</td><td>${ans}</td><td>${det||'—'}</td></tr>`;
+  }).join('');
+  return `<h3 style="font-size:10.5px;margin:8px 0 3px">Suspense items</h3>
+    <div class="scroll"><table><thead><tr><th>Item</th><th>Answer</th><th>Detail</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+/* the design as drawn versus the takeoff as corrected in the field */
+function takeoffTable(id){
+  const d = takeoffDelta(id);
+  if (!d.any) return '';
+  const dropped = droppedUnits(id);
+  const added = ((S.unitEdits||{})[id]||{}).add || [];
+  const est = ((S.unitEdits||{})[id]||{}).est || {};
+  const reEst = Object.keys(est);
+  return `<h3 style="font-size:10.5px;margin:8px 0 3px">Takeoff corrected at pre-con</h3>
+    <div class="scroll"><table><thead><tr><th>Change</th><th>Code</th><th>Description</th><th class="n">Qty</th><th>Reason</th></tr></thead>
+    <tbody>
+      ${added.map(u => `<tr><td>Added</td><td>${u.code}</td><td>${esc(u.desc)}</td>
+        <td class="n">${u.estQty} ${u.uom}</td><td>${esc(u.note||'')}</td></tr>`).join('')}
+      ${dropped.map(u => `<tr><td>Dropped</td><td>${u.code}</td><td>${esc(u.desc)}</td>
+        <td class="n">${u.estQty} ${u.uom}</td><td>cannot be built as drawn</td></tr>`).join('')}
+      ${reEst.map(seq => { const u = (UORIG[id]||[]).find(x => String(x.seq) === String(seq)) || {};
+        return `<tr><td>Re-estimated</td><td>${u.code||''}</td><td>${esc(u.desc||'')}</td>
+        <td class="n">${u.estQty} → ${est[seq]} ${u.uom||''}</td><td>measured in the field</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p style="font-size:9px;color:#777;margin:3px 0 0">The printed design is unchanged underneath; this is what the
+      construction specialist corrected before a crew was sent.</p>`;
+}
+/* documents attached to the point, listed by name — the files themselves travel separately */
+function docTable(id){
+  const list = docsOf(id);
+  if (!list.length) return '';
+  return `<h3 style="font-size:10.5px;margin:8px 0 3px">Documents attached</h3>
+    <div class="scroll"><table><thead><tr><th>Kind</th><th>File</th><th>Attached</th><th>By</th></tr></thead>
+    <tbody>${list.map(d => `<tr><td>${dockOf(d.kind).lbl}</td><td>${esc(d.name)}</td>
+      <td>${new Date(d.ts).toLocaleDateString()}</td><td>${esc(d.by||'—')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function showDoc(kind, arg){
   let html = '';
@@ -4722,6 +5579,10 @@ function showDoc(kind, arg){
         return `<tr><td>${p.sec} Pt ${p.pt}</td><td>${p.grid}</td><td>${ST[rec(p.id).status].lbl}</td>
         <td class="n">${x.done}/${x.planned}</td>${canSeeMoney()?`<td class="n">${money(x.total)}</td>`:''}</tr>`; }).join('')}</tbody>
       <tfoot><tr><td colspan="4">${list.length} of ${t.pts} points touched</td>${canSeeMoney()?`<td class="n">${money(t.total)}</td>`:''}</tr></tfoot></table></div>
+      ${(() => { const wd = woDocs(arg); return wd.length ? `<h2>Job documents</h2>
+        <div class="scroll"><table><thead><tr><th>Kind</th><th>File</th><th>Attached</th><th>By</th></tr></thead>
+        <tbody>${wd.map(d => `<tr><td>${dockOf(d.kind).lbl}</td><td>${esc(d.name)}</td>
+          <td>${new Date(d.ts).toLocaleDateString()}</td><td>${esc(d.by||'—')}</td></tr>`).join('')}</tbody></table></div>` : ''; })()}
       ${list.map(p => ptSection(p,true)).join('')}` + sigBlock();
     if (!list.length) html = docHead(w,{title:'Asbuilt package — WO '+arg}) + '<p>No work recorded yet on this work order.</p>';
   } else if (kind === 'day'){
@@ -4799,16 +5660,23 @@ function renderSet(){
       actually worked, so a day with two crews out carries more GF per crew than a day with four.</p>` : ''}
     <hr>
     <div class="grid2">
-      <div><label class="f">Daily target margin %</label>
+      <div><label class="f">Working days per week</label>
+        <input type="number" step="1" min="1" max="7" value="${workdays()}"
+          onchange="S.cost.workdays=Math.max(1,Math.min(7,+this.value));save();renderSet();renderAll()"></div>
+      <div><label class="f">Margin above cost % (0 = break-even)</label>
         <input type="number" step="1" min="0" max="200" value="${Math.round(targetMargin()*100)}"
           onchange="S.cost.targetMargin=Math.max(0,+this.value/100);save();renderSet();renderAll()"></div>
-      <div><label class="f">Standard crew-day</label>
-        <input value="${money0(stdCrewDayCost())}" disabled></div>
     </div>
-    <p class="hint" style="margin-top:8px">The office schedule shows a bar per crew that fills when the day's booked
-      work covers that crew's cost plus this margin. A crew with no roster logged falls back to the standard day —
-      <b>five men</b> (foreman, two linemen, an equipment operator and an apprentice) with a bucket and a digger
-      derrick for ${STD_HOURS} hours: ${money0(stdCrewLabor())} labor + ${money0(stdCrewEquip())} equipment${
+    <div class="grid2" style="margin-top:10px">
+      <div><label class="f">Standard crew-day</label><input value="${money0(stdCrewDayCost())}" disabled></div>
+      <div><label class="f">A full week per crew</label>
+        <input value="${money0(stdCrewDayCost()*workdays()*(1+targetMargin()))}" disabled></div>
+    </div>
+    <p class="hint" style="margin-top:8px">The scheduler's bar per crew fills when they have <b>a full week of work
+      on them</b> — booked plus still-to-build, measured against ${workdays()} crew-days. At 0% margin that is
+      break-even: enough work to pay for the crew. A crew with no roster logged falls back to the standard day —
+      <b>five men</b> (foreman, two linemen, an equipment operator, an apprentice) with a bucket and a digger derrick
+      for ${STD_HOURS} hours: ${money0(stdCrewLabor())} labor + ${money0(stdCrewEquip())} equipment${
       S.cost.gfOn?` + ${money0(gfShare(today()))} GF`:''}.</p>
     <hr>
     <div class="scrollx"><table class="dt">
@@ -5077,6 +5945,28 @@ function seedDemo(){
     g.font = '11px sans-serif'; g.fillText(p.sec + ' Pt ' + p.pt, 8, 92);
     return cv.toDataURL('image/jpeg', .4);
   };
+  /* a scan of a signed piece of paper — white sheet, header, ruled lines, signature */
+  const pv = document.createElement('canvas'); pv.width = 170; pv.height = 220;
+  const pg = pv.getContext('2d');
+  const PAPER = { change:'CHANGE ORDER APPROVAL', print:'WORK PRINT', permit:'PERMIT' };
+  const paper = (kind, p) => {
+    pg.fillStyle = '#f4f1ea'; pg.fillRect(0,0,170,220);
+    pg.strokeStyle = '#cfc8ba'; pg.lineWidth = 1; pg.strokeRect(6.5,6.5,157,207);
+    pg.fillStyle = '#3a3a3a'; pg.font = 'bold 9px sans-serif';
+    pg.fillText(PAPER[kind] || 'DOCUMENT', 14, 26);
+    pg.font = '7px sans-serif'; pg.fillStyle = '#6b6b6b';
+    pg.fillText('Tampa Electric · ' + p.sec + ' Pt ' + p.pt, 14, 38);
+    pg.strokeStyle = '#ddd6c8';
+    for (let y = 52; y < 168; y += 11){ pg.beginPath(); pg.moveTo(14,y); pg.lineTo(156,y); pg.stroke(); }
+    pg.strokeStyle = '#2b3d6b'; pg.lineWidth = 1.4; pg.beginPath();
+    pg.moveTo(22,192); pg.bezierCurveTo(44,172, 60,206, 82,184);
+    pg.bezierCurveTo(96,172, 104,200, 126,186); pg.stroke();
+    pg.strokeStyle = '#9a9384'; pg.lineWidth = 1; pg.beginPath();
+    pg.moveTo(18,198); pg.lineTo(140,198); pg.stroke();
+    pg.fillStyle = '#6b6b6b'; pg.font = '6.5px sans-serif';
+    pg.fillText('Approved — TECO', 18, 208);
+    return pv.toDataURL('image/jpeg', .5);
+  };
   const addShots = (p, kind, n, d) => {
     const r = rec(p.id);
     for (let i = 1; i <= n; i++)
@@ -5094,6 +5984,28 @@ function seedDemo(){
     sp.switching.needed = opts.sw;
     if (opts.sw){ sp.switching.ordered = opts.d1;
       if (opts.swNum !== false) sp.switching.number = 'SO-' + (48000 + Math.abs(p.pt.length*13 + p.sec.charCodeAt(0)) % 900); }
+    // engineering got it wrong — customer change order
+    sp.change.needed = !!opts.chg;
+    if (opts.chg){
+      sp.change.reason = opts.chgWhy || 'Pole class as drawn will not hold the down guy';
+      sp.change.requested = opts.d1;
+      if (opts.chgOk !== false){
+        sp.change.approved = opts.d2 || opts.d1;
+        sp.change.ref = 'CO-' + (1200 + Math.abs(p.pt.length*17 + p.sec.charCodeAt(0)) % 700);
+        addDocFile(p, 'change', 'CO-approval-' + p.sec + p.pt + '.png', opts.d2 || opts.d1);
+      }
+    }
+    // material: yes is the clear answer
+    sp.material.needed = opts.mat === false ? false : true;
+    if (opts.mat === false){ sp.material.eta = opts.matEta || opts.d2 || opts.d1;
+      sp.material.po = 'PO-' + (77000 + Math.abs(p.pt.length*23) % 900); }
+  };
+  /* a photographed piece of paper — that is what an approval actually looks like */
+  const addDocFile = (p, kind, name, d) => {
+    const r = rec(p.id); r.docs = r.docs || [];
+    r.docs.push({ id:'doc'+p.id+kind, kind, name, mime:'image/png',
+      data:paper(kind, p), size:9000 + (p.pt.length*137 % 4000),
+      ts:new Date(d + 'T11:20:00').toISOString(), by:'R. Alvarez', role:'specialist' });
   };
   const yday = dates[dates.length-2] || dates[0], d0 = dates[0];
 
@@ -5125,7 +6037,8 @@ function seedDemo(){
         }
         const needsSw = n % 3 === 0, needsLoc = n % 2 === 0, needsMot = n % 5 === 2;
         const swMissing = n % 11 === 3;
-        fillSusp(p, { loc:needsLoc, mot:needsMot, sw:needsSw, d1:d, d2:d, swNum: !swMissing });
+        fillSusp(p, { loc:needsLoc, mot:needsMot, sw:needsSw, d1:d, d2:d, swNum: !swMissing,
+                      chg: n % 8 === 3, chgOk:true });
 
         const stage = di === last ? 'in_progress'
                     : di === prev ? 'ready_audit'
@@ -5196,7 +6109,8 @@ function seedDemo(){
 
   /* ---- the front of the pipeline: not built yet ---- */
   const front = [];
-  Object.keys(ASSIGN).forEach(wo => front.push(...queue[wo].splice(0, 14)));
+  Object.keys(ASSIGN).forEach(wo => front.push(...queue[wo].splice(0, 18)));
+  let noMat = 0;                                   // a couple of points cleared but waiting on steel
   front.forEach((p, i) => {
     const r = rec(p.id), m = i % 7;
     if (m === 0 || m === 1 || m === 2){
@@ -5207,13 +6121,17 @@ function seedDemo(){
       fillSusp(p, { loc:true, mot:false, sw:false, d1:yday, locBack:false });
       addShots(p, 'briefing', 1, yday);
     }
-    else if (m === 4){                                         // ridden, switching order on order
+    else if (m === 4){                                         // ridden — design is wrong, change order out to the customer
       addShots(p, 'before', 5, yday);
-      fillSusp(p, { loc:false, mot:true, sw:true, d1:yday, swNum:false });
+      fillSusp(p, { loc:false, mot:true, sw:true, d1:yday, swNum:false,
+                    chg:true, chgOk:false,
+                    chgWhy:'Riser drawn on the wrong side of the road' });
     }
     else if (m === 5){                                         // ridden and clear
       addShots(p, 'before', 5, yday);
-      fillSusp(p, { loc:true, mot:true, sw:true, d1:yday, d2:d0 });
+      fillSusp(p, { loc:true, mot:true, sw:true, d1:yday, d2:d0,
+                    mat: noMat++ < 2 ? false : true,
+                    matEta: dates[dates.length-1] });          // cleared, material not on site yet
       addShots(p, 'locate', 1, yday);
     }
     else {                                                     // assigned, not started
@@ -5229,7 +6147,37 @@ function seedDemo(){
     }
   });
 
+  /* ---- job documents on each work order ---- */
+  S.docs = {};
+  Object.keys(WOS).forEach(wo => {
+    const fake = { sec:'WO', pt:wo };
+    woDocs(wo).push(
+      { id:'wd'+wo+'a', kind:'print', name:`WO_${wo}_issued_print.png`, mime:'image/png',
+        data:paper('print', fake), size:184320, ts:new Date(dates[0]+'T07:05:00').toISOString(),
+        by:'D. Cisneros', role:'pm' },
+      { id:'wd'+wo+'b', kind:'permit', name:`WO_${wo}_county_ROW_permit.png`, mime:'image/png',
+        data:paper('permit', fake), size:96000, ts:new Date(dates[0]+'T07:06:00').toISOString(),
+        by:'Office', role:'pm' });
+  });
+
+  /* ---- a couple of takeoffs the specialist corrected on the ride-out ---- */
+  S.unitEdits = {};
+  const ridden = PTS.filter(p => ['pending_suspense','ready_construction'].includes(rec(p.id).status)
+                                 && p.units.length > 1);
+  ridden.slice(0,2).forEach((p, i) => {
+    const extra = CATBY['1018'] || CAT[4];
+    if (extra) addDesignUnit(p.id, extra.code, 1,
+      i ? 'anchor drawn in the ditch — moved and one added' : 'pole is a class 2, not a 3');
+    const kill = p.units.find(u => isDesignUnit(p.id, u.seq));
+    if (kill && p.units.length > 2) dropDesignUnit(p.id, kill.seq,
+      'existing unit already in place — nothing to build');
+  });
+
   S.settings.crew = '412'; S.settings.foreman = FOREMAN['412'];
+  S.settings.foreman = FOREMAN['412'];
+  /* every crew's standing roster — the foreman sets it once, not every morning */
+  S.rosters = {};
+  S.crews.forEach(c => { S.rosters[c] = roster(c).map(x => ({ kind:x.kind, name:x.name, st:0, ot:0 })); });
   S.settings.filter = 'all'; S.settings.view = null;
   save(); drawPins(); fitJob(); renderAll();
   const staged = {}; PTS.forEach(p => { const k = rec(p.id).status; staged[k] = (staged[k]||0)+1; });
@@ -5266,7 +6214,7 @@ window.addEventListener('load', () => {
   const sel = document.getElementById('role');
   migrateRole();
   if (S.settings.role && [...sel.options].some(o => o.value === S.settings.role)) sel.value = S.settings.role;
-  migrateRole(); migrateStatus(); applyRateOverrides(); migrateLocks();
+  migrateRole(); migrateStatus(); applyUnitEdits(); applyRateOverrides(); migrateLocks();
   if (typeof DEMO_BUILD !== 'undefined' && DEMO_BUILD){
     const el = document.createElement('span');
     el.className = 'pill'; el.style.cssText = 'border-color:#f59e0b;color:#f59e0b';
